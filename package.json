@@ -1,0 +1,29 @@
+{
+  "name": "money-machine-core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Supervisor, contract and dashboard for the Money Machine system",
+  "bin": { "mm": "src/cli.ts" },
+  "scripts": {
+    "dev": "tsx src/cli.ts start",
+    "start": "tsx src/cli.ts start",
+    "once": "tsx src/cli.ts once",
+    "status": "tsx src/cli.ts status",
+    "kill": "tsx src/cli.ts kill",
+    "resume": "tsx src/cli.ts resume",
+    "install-all": "tsx src/cli.ts install",
+    "doctor": "tsx src/cli.ts doctor",
+    "sync-contract": "tsx src/cli.ts sync-contract",
+    "check": "tsc --noEmit",
+    "test": "node --import tsx --test \"src/**/*.test.ts\""
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3"
+  }
+}
