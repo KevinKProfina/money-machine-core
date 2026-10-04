@@ -153,7 +153,7 @@ async function refresh() {
         + (a.births ? ' · Geburten ' + a.births.total + ' / Tode ' + ((a.deaths && a.deaths.total) || 0) : '')
       : 'keine Daten';
     table('arena', ['Agent', 'Generation', 'Guthaben', 'Rendite', 'Alter (Zyklen)'],
-      ((a && a.leaderboard) || []).slice(0, 10).map((x) => [esc(x.id), x.generation, usd(x.balance), pct(x.return), x.age]));
+      ((a && a.leaderboard) || []).slice(0, 10).map((x) => [esc(x.id), x.generation, usd(x.balanceUsd), pct(x.return), x.ageCycles]));
     const streams = s.revenue ? Object.entries(s.revenue.streams) : [];
     table('revenue', ['Strom', 'Art', 'Gesamt', '7 Tage', '30 Tage', 'Simuliert'],
       streams.map(([n, v]) => [esc(n), esc(v.kind), usd(v.totalUsd), usd(v.last7dUsd), usd(v.last30dUsd), v.simulated ? 'ja' : 'nein']));

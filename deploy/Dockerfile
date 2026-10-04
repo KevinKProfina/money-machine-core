@@ -20,4 +20,5 @@ EXPOSE 8780 8790
 
 USER node
 WORKDIR /opt/mm/money-machine-core
-CMD ["npx", "tsx", "src/cli.ts", "start"]
+# node directly (not npx) so SIGTERM from `docker stop` reaches the supervisor
+CMD ["node", "--import", "tsx", "src/cli.ts", "start"]

@@ -13,7 +13,7 @@ User=mm
 WorkingDirectory=/opt/mm/money-machine-core
 EnvironmentFile=/opt/mm/money-machine-core/deploy/mm.env
 Environment=MM_STATE_DIR=/var/lib/money-machine
-ExecStart=/usr/bin/npx tsx src/cli.ts start
+ExecStart=/usr/bin/node --import tsx src/cli.ts start
 Restart=always
 RestartSec=10
 StateDirectory=money-machine

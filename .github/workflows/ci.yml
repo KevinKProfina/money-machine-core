@@ -14,3 +14,20 @@ jobs:
       - run: npm ci
       - run: npm run check
       - run: npm test
+  agent-arena:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: components/agent-arena
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: components/agent-arena/package-lock.json
+      - run: npm ci
+      - run: npm run check
+      - run: npm test
+      - name: contract copy matches canonical contract
+        run: cmp src/mm-contract.ts ../../contract/mm-contract.ts

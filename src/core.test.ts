@@ -140,11 +140,12 @@ test('arena summary is shown when present and ignored when malformed', async () 
   await writeJsonAtomic(path.join(process.env.MM_STATE_DIR!, 'arena', 'summary.json'), {
     schema: 'mm.arena-summary/v1', timestamp: new Date().toISOString(), cycle: 7, population: 42, maxGeneration: 3,
     treasuryUsd: 300, equityUsd: 498.5, births: { total: 10, lastCycle: 1 }, deaths: { total: 4, lastCycle: 0 },
-    leaderboard: [{ id: 'agt-1', generation: 3, balance: 12.5, return: 1.5, age: 6 }],
+    leaderboard: [{ id: 'agt-1', generation: 3, balanceUsd: 12.5, return: 1.5, ageCycles: 6 }],
   });
   const status = await collectStatus();
   assert.equal(status.arena?.population, 42);
   assert.match(formatStatus(status), /Arena: cycle 7 \| population 42/);
+  assert.match(formatStatus(status), /agt-1 .*\$12\.50 .*age 6/);
   await writeJsonAtomic(path.join(process.env.MM_STATE_DIR!, 'arena', 'summary.json'), { schema: 'other' });
   assert.equal((await collectStatus()).arena, null);
 });

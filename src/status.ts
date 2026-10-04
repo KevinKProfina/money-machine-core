@@ -36,7 +36,7 @@ export type ArenaSummary = {
   equityUsd: number;
   births?: { total: number; lastCycle: number };
   deaths?: { total: number; lastCycle: number };
-  leaderboard?: { id: string; generation: number; balance: number; return: number; age: number }[];
+  leaderboard?: { id: string; generation: number; balanceUsd: number; return: number; ageCycles: number }[];
 };
 
 export type SystemStatus = {
@@ -176,7 +176,7 @@ export function formatStatus(status: SystemStatus): string {
     lines.push('');
     lines.push(`Arena: cycle ${a.cycle} | population ${a.population} | max generation ${a.maxGeneration} | equity ${usd(a.equityUsd)} | treasury ${usd(a.treasuryUsd)}${a.births ? ` | births ${a.births.total} / deaths ${a.deaths?.total ?? 0}` : ''}`);
     for (const agent of (a.leaderboard ?? []).slice(0, 5)) {
-      lines.push(`  ${agent.id.padEnd(22)} gen ${String(agent.generation).padStart(3)} balance ${usd(agent.balance).padStart(10)} return ${pct(agent.return).padStart(7)} age ${agent.age}`);
+      lines.push(`  ${agent.id.padEnd(22)} gen ${String(agent.generation).padStart(3)} balance ${usd(agent.balanceUsd).padStart(10)} return ${pct(agent.return).padStart(7)} age ${agent.ageCycles}`);
     }
   }
 
