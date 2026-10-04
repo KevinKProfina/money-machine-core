@@ -116,6 +116,7 @@ const DASHBOARD_HTML = `<!doctype html>
 <div id="banner"></div>
 <div class="grid" id="kpis"></div>
 <div class="card"><h2>Strategien</h2><table id="strategies"></table></div>
+<div class="card"><h2>Agenten-Arena</h2><div class="muted" id="arenaMeta">keine Daten</div><table id="arena"></table></div>
 <div class="card"><h2>Umsatzströme</h2><table id="revenue"></table></div>
 <div class="card"><h2>Letzter Zyklus</h2><table id="cycle"></table></div>
 <div class="card"><h2>Ereignisse</h2><table id="events"></table></div>
@@ -146,6 +147,13 @@ async function refresh() {
         '<span class="' + (x.status === 'active' ? 'ok' : 'warn') + '">' + esc(x.status) + '</span>', usd(alloc[x.name]),
         usd(x.realizedPnlUsd + x.unrealizedPnlUsd), pct(x.totalReturn), pct(x.winRate), pct(x.maxDrawdown), x.totalTrades,
         (x.stale ? '<span class="warn">veraltet</span> ' : '') + esc(new Date(x.lastUpdated).toLocaleTimeString('de-DE'))]));
+    const a = s.arena;
+    document.getElementById('arenaMeta').textContent = a
+      ? 'Zyklus ' + a.cycle + ' · Population ' + a.population + ' · max. Generation ' + a.maxGeneration + ' · Kapital ' + usd(a.equityUsd) + ' · Treasury ' + usd(a.treasuryUsd)
+        + (a.births ? ' · Geburten ' + a.births.total + ' / Tode ' + ((a.deaths && a.deaths.total) || 0) : '')
+      : 'keine Daten';
+    table('arena', ['Agent', 'Generation', 'Guthaben', 'Rendite', 'Alter (Zyklen)'],
+      ((a && a.leaderboard) || []).slice(0, 10).map((x) => [esc(x.id), x.generation, usd(x.balance), pct(x.return), x.age]));
     const streams = s.revenue ? Object.entries(s.revenue.streams) : [];
     table('revenue', ['Strom', 'Art', 'Gesamt', '7 Tage', '30 Tage', 'Simuliert'],
       streams.map(([n, v]) => [esc(n), esc(v.kind), usd(v.totalUsd), usd(v.last7dUsd), usd(v.last30dUsd), v.simulated ? 'ja' : 'nein']));

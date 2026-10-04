@@ -7,7 +7,7 @@ export type ComponentType = 'cycle' | 'daemon';
 
 export type ComponentConfig = {
   name: string;
-  /** Directory relative to MM_ROOT. */
+  /** Directory relative to MM_ROOT, or relative to money-machine-core when it starts with "./". */
   dir: string;
   type: ComponentType;
   /** Cycle components run in ascending phase order; same phase runs in parallel. */
@@ -56,7 +56,7 @@ export function loadSystemConfig(configPath = path.join(coreDir, 'system.config.
       if (c.type !== 'cycle' && c.type !== 'daemon') throw new Error(`component ${c.name}: invalid type ${String(c.type)}`);
       return {
         ...c,
-        absDir: path.resolve(root, c.dir),
+        absDir: c.dir.startsWith('./') ? path.resolve(coreDir, c.dir) : path.resolve(root, c.dir),
         script: c.script ?? (c.type === 'cycle' ? 'once' : 'start'),
       };
     });

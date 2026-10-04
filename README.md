@@ -24,6 +24,7 @@ Integrationsschicht des Money-Machine-Systems: gemeinsamer Datenvertrag, Supervi
 | `liquidation-hunter` | Strategie: Liquidationen von Lending-Positionen (derzeit simulierte Datenquelle) |
 | `revenue-engine` | Erfasst und aggregiert alle Umsatzströme (Trading, KI-Services, Affiliate, digitale Produkte, SaaS) |
 | `agent-marketplace` | Marktplatz, auf dem Agenten Services anbieten/kaufen (Escrow, Reputation, Revenue-Share) |
+| `components/agent-arena` (in diesem Repo) | Evolutionäre Agenten-Arena: viele kleine Agenten mit eigenem Budget, Verlierer sterben, Gewinner vermehren sich mit mutierter Strategie (Paper-Modus) |
 | `capital-allocator` | Bewertet Strategien und schlägt eine Kapitalverteilung vor |
 | `orchestrator` | Governance: Health-Gates, Reserve, Drawdown-Not-Aus, Reinvestition, verbindliche Allokation |
 | `money-machine-core` | Dieses Repo |
@@ -60,6 +61,21 @@ npm start                       # Dauerbetrieb: Zyklen, Marketplace-Daemon, Dash
 ```
 
 Jede Komponente hat ihre eigene `.env` (siehe deren `.env.example`). `MM_STATE_DIR` wird vom Supervisor gesetzt und muss dort nicht eingetragen werden.
+
+## Deployment
+
+**Docker (empfohlen):** alle Repos nebeneinander klonen (`scripts/bootstrap.sh`), dann im übergeordneten Verzeichnis:
+
+```bash
+cp money-machine-core/deploy/mm.env.example money-machine-core/deploy/mm.env   # ausfüllen
+docker compose -f money-machine-core/deploy/docker-compose.yml up -d --build
+```
+
+Dashboard und Marketplace-API sind nur auf `127.0.0.1` erreichbar. Der Zustand liegt im Volume `mm-state`.
+
+**Ohne Docker:** `deploy/money-machine.service` (systemd) — Anleitung steht in der Datei.
+
+**Alarme:** Mit `TELEGRAM_BOT_TOKEN` und `TELEGRAM_CHAT_ID` meldet der Supervisor ausfallende/wiederhergestellte Komponenten, Not-Aus an/aus und jede Strategie im Live-Modus — jeweils einmal pro Zustandswechsel, nicht jeden Zyklus.
 
 ## CLI
 

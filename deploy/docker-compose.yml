@@ -1,0 +1,18 @@
+# Run from the parent directory of all repos:
+#   docker compose -f money-machine-core/deploy/docker-compose.yml up -d --build
+services:
+  money-machine:
+    build:
+      context: ../..
+      dockerfile: money-machine-core/deploy/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - mm.env
+    volumes:
+      - mm-state:/data
+    ports:
+      # bound to localhost only — put a reverse proxy with auth in front if you need remote access
+      - "127.0.0.1:8780:8780"   # dashboard
+      - "127.0.0.1:8790:8790"   # agent-marketplace API
+volumes:
+  mm-state:

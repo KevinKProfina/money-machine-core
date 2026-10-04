@@ -135,3 +135,34 @@ test('dashboard: kill endpoint disabled without admin token', async () => {
     server.close();
   }
 });
+
+test('arena summary is shown when present and ignored when malformed', async () => {
+  await writeJsonAtomic(path.join(process.env.MM_STATE_DIR!, 'arena', 'summary.json'), {
+    schema: 'mm.arena-summary/v1', timestamp: new Date().toISOString(), cycle: 7, population: 42, maxGeneration: 3,
+    treasuryUsd: 300, equityUsd: 498.5, births: { total: 10, lastCycle: 1 }, deaths: { total: 4, lastCycle: 0 },
+    leaderboard: [{ id: 'agt-1', generation: 3, balance: 12.5, return: 1.5, age: 6 }],
+  });
+  const status = await collectStatus();
+  assert.equal(status.arena?.population, 42);
+  assert.match(formatStatus(status), /Arena: cycle 7 \| population 42/);
+  await writeJsonAtomic(path.join(process.env.MM_STATE_DIR!, 'arena', 'summary.json'), { schema: 'other' });
+  assert.equal((await collectStatus()).arena, null);
+});
+
+test('alerts fire on state changes only', async () => {
+  const { diffAlerts, telegramSender } = await import('./alerts.js');
+  const empty = { failing: [], killSwitch: false, live: [] };
+  const broken = { failing: ['orchestrator'], killSwitch: true, live: ['solana-trader'] };
+  assert.equal(diffAlerts(empty, broken).length, 3);
+  assert.deepEqual(diffAlerts(broken, broken), []);
+  const recovered = diffAlerts(broken, empty);
+  assert.ok(recovered.some((t) => t.includes('recovered')) && recovered.some((t) => t.includes('cleared')));
+  assert.equal(telegramSender('', ''), undefined);
+  let sent = '';
+  const fake = (async (_url: string, init: { body: string }) => {
+    sent = init.body;
+    return new Response('{}', { status: 200 });
+  }) as unknown as typeof fetch;
+  await telegramSender('t', 'c', fake)!('hello');
+  assert.match(sent, /"chat_id":"c"/);
+});

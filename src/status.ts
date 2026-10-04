@@ -23,6 +23,21 @@ export type SupervisorState = {
 };
 
 export const supervisorStatePath = () => path.join(stateDir(), 'core', 'supervisor.json');
+export const arenaSummaryPath = () => path.join(stateDir(), 'arena', 'summary.json');
+
+/** The fields of agent-arena's summary.json that core displays (the file carries more). */
+export type ArenaSummary = {
+  schema: 'mm.arena-summary/v1';
+  timestamp: string;
+  cycle: number;
+  population: number;
+  maxGeneration: number;
+  treasuryUsd: number;
+  equityUsd: number;
+  births?: { total: number; lastCycle: number };
+  deaths?: { total: number; lastCycle: number };
+  leaderboard?: { id: string; generation: number; balance: number; return: number; age: number }[];
+};
 
 export type SystemStatus = {
   timestamp: string;
@@ -34,6 +49,7 @@ export type SystemStatus = {
   revenue: RevenueReport | null;
   marketplace: Omit<MarketplaceReport, 'revenueEvents'> | null;
   supervisor: SupervisorState | null;
+  arena: ArenaSummary | null;
   events: MMEvent[];
   warnings: string[];
 };
@@ -70,6 +86,8 @@ export async function collectStatus(staleAfterMs = 30 * 60_000, now = Date.now()
   const revenue = await readJsonSafe<RevenueReport | null>(statePaths.revenue(), null);
   const market = await readJsonSafe<MarketplaceReport | null>(statePaths.marketplace(), null);
   const supervisor = await readJsonSafe<SupervisorState | null>(supervisorStatePath(), null);
+  const arenaRaw = await readJsonSafe<ArenaSummary | null>(arenaSummaryPath(), null);
+  const arena = arenaRaw?.schema === 'mm.arena-summary/v1' ? arenaRaw : null;
 
   let reason: string | undefined;
   const killActive = isKillSwitchActive();
@@ -102,6 +120,7 @@ export async function collectStatus(staleAfterMs = 30 * 60_000, now = Date.now()
     revenue,
     marketplace,
     supervisor,
+    arena,
     events: await readRecentEvents(),
     warnings,
   };
@@ -150,6 +169,15 @@ export function formatStatus(status: SystemStatus): string {
     lines.push(`Marketplace: ${m.agents} agents, ${m.services} services, jobs ${m.jobsCompleted} ok / ${m.jobsFailed} failed, volume ${usd(m.grossVolumeUsd)}, platform revenue ${usd(m.platformRevenueUsd)}`);
   } else {
     lines.push('Marketplace: no report yet');
+  }
+
+  if (status.arena) {
+    const a = status.arena;
+    lines.push('');
+    lines.push(`Arena: cycle ${a.cycle} | population ${a.population} | max generation ${a.maxGeneration} | equity ${usd(a.equityUsd)} | treasury ${usd(a.treasuryUsd)}${a.births ? ` | births ${a.births.total} / deaths ${a.deaths?.total ?? 0}` : ''}`);
+    for (const agent of (a.leaderboard ?? []).slice(0, 5)) {
+      lines.push(`  ${agent.id.padEnd(22)} gen ${String(agent.generation).padStart(3)} balance ${usd(agent.balance).padStart(10)} return ${pct(agent.return).padStart(7)} age ${agent.age}`);
+    }
   }
 
   if (status.supervisor?.lastCycle) {

@@ -2,8 +2,9 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { emitEvent, readJsonSafe, statePaths, writeJsonAtomic } from '../contract/mm-contract.js';
 import { cyclePhases, type SystemConfig } from './config.js';
+import { diffAlerts, telegramSender, type AlertSender, type AlertState } from './alerts.js';
 import { Daemon, runStep, type StepResult } from './runner.js';
-import { supervisorStatePath, type SupervisorState } from './status.js';
+import { collectStatus, supervisorStatePath, type SupervisorState } from './status.js';
 
 type StepRunner = (component: SystemConfig['components'][number], config: SystemConfig) => Promise<StepResult>;
 
@@ -66,8 +67,24 @@ export class Supervisor {
   private running = false;
   private stopping = false;
   private cycleInFlight?: Promise<unknown>;
+  private alertState: AlertState = { failing: [], killSwitch: false, live: [] };
 
-  constructor(private config: SystemConfig) {}
+  constructor(
+    private config: SystemConfig,
+    private sendAlert: AlertSender | undefined = telegramSender(),
+  ) {}
+
+  private async alert(steps: StepResult[]): Promise<void> {
+    if (!this.sendAlert) return;
+    const status = await collectStatus();
+    const next: AlertState = {
+      failing: steps.filter((s) => !s.ok).map((s) => s.name).sort(),
+      killSwitch: status.killSwitch.active || Boolean(status.allocations?.killSwitch),
+      live: status.strategies.filter((s) => s.mode === 'live').map((s) => s.name).sort(),
+    };
+    for (const text of diffAlerts(this.alertState, next)) await this.sendAlert(text);
+    this.alertState = next;
+  }
 
   async start(): Promise<void> {
     await updateSupervisorState((state) => {
@@ -91,6 +108,7 @@ export class Supervisor {
       await updateSupervisorState((state) => {
         state.daemons = this.daemons.map((d) => ({ ...d.state }));
       });
+      await this.alert(result.steps);
       console.log(`cycle finished: ${result.ok ? 'ok' : 'with failures'}; next in ${this.config.cycleIntervalMs} ms`);
     });
     this.cycleInFlight = cycle.catch((err) => console.error(`cycle crashed: ${(err as Error).message}`));

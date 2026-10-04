@@ -5,3 +5,4 @@ dist/
 .state/
 .mm-state/
 logs/
+deploy/mm.env
