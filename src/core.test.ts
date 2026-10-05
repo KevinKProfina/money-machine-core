@@ -167,3 +167,34 @@ test('alerts fire on state changes only', async () => {
   await telegramSender('t', 'c', fake)!('hello');
   assert.match(sent, /"chat_id":"c"/);
 });
+
+test('studio: decisions need the admin token, previews are sandboxed and confined', async () => {
+  const studio = path.join(process.env.MM_STATE_DIR!, 'studio');
+  fs.mkdirSync(path.join(studio, 'site', 'demo'), { recursive: true });
+  fs.writeFileSync(path.join(studio, 'site', 'demo', 'index.html'), '<h1>demo</h1>');
+  fs.writeFileSync(path.join(process.env.MM_STATE_DIR!, 'secret.json'), '{"x":1}');
+  const server = createDashboardServer({ host: '127.0.0.1', port: 0, adminToken: 'secret-token' });
+  await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  const post = (body: unknown, token?: string) =>
+    fetch(`${base}/api/studio/decision`, { method: 'POST', headers: token ? { authorization: `Bearer ${token}` } : {}, body: JSON.stringify(body) });
+  try {
+    assert.equal((await post({ ventureId: 'v1', decision: 'approved' })).status, 401);
+    assert.equal((await post({ ventureId: 'v1', decision: 'maybe' }, 'secret-token')).status, 400);
+    assert.equal((await post({ ventureId: '../evil', decision: 'approved' }, 'secret-token')).status, 400);
+    assert.equal((await post({ ventureId: 'v1', decision: 'approved' }, 'secret-token')).status, 200);
+    assert.equal((await post({ ventureId: 'v2', decision: 'rejected', note: 'meh' }, 'secret-token')).status, 200);
+    const lines = fs.readFileSync(path.join(studio, 'decisions.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+    assert.deepEqual(lines.map((l) => [l.ventureId, l.decision, l.decidedBy]), [['v1', 'approved', 'dashboard'], ['v2', 'rejected', 'dashboard']]);
+    assert.equal(lines[1].note, 'meh');
+
+    const ok = await fetch(`${base}/studio-preview?path=${encodeURIComponent(path.join(studio, 'site', 'demo', 'index.html'))}`);
+    assert.equal(ok.status, 200);
+    assert.equal(ok.headers.get('content-security-policy'), 'sandbox');
+    assert.equal((await fetch(`${base}/studio-preview?path=site/demo/index.html`)).status, 200);
+    assert.equal((await fetch(`${base}/studio-preview?path=${encodeURIComponent('../secret.json')}`)).status, 404);
+    assert.equal((await fetch(`${base}/studio-preview?path=${encodeURIComponent('/etc/passwd')}`)).status, 404);
+  } finally {
+    server.close();
+  }
+});

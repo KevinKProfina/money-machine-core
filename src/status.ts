@@ -14,6 +14,7 @@ import {
   type StrategyReport,
 } from '../contract/mm-contract.js';
 import type { StepResult, DaemonState } from './runner.js';
+import { readStudioSummary, type StudioSummary } from './studio.js';
 
 export type SupervisorState = {
   startedAt?: string;
@@ -50,6 +51,7 @@ export type SystemStatus = {
   marketplace: Omit<MarketplaceReport, 'revenueEvents'> | null;
   supervisor: SupervisorState | null;
   arena: ArenaSummary | null;
+  studio: StudioSummary | null;
   events: MMEvent[];
   warnings: string[];
 };
@@ -121,6 +123,7 @@ export async function collectStatus(staleAfterMs = 30 * 60_000, now = Date.now()
     marketplace,
     supervisor,
     arena,
+    studio: await readStudioSummary(),
     events: await readRecentEvents(),
     warnings,
   };
@@ -178,6 +181,16 @@ export function formatStatus(status: SystemStatus): string {
     for (const agent of (a.leaderboard ?? []).slice(0, 5)) {
       lines.push(`  ${agent.id.padEnd(22)} gen ${String(agent.generation).padStart(3)} balance ${usd(agent.balanceUsd).padStart(10)} return ${pct(agent.return).padStart(7)} age ${agent.ageCycles}`);
     }
+  }
+
+  if (status.studio) {
+    const st = status.studio;
+    lines.push('');
+    const counts = Object.entries(st.counts ?? {}).map(([k, v]) => `${k} ${v}`).join(', ');
+    lines.push(`Venture studio: channel ${st.channel ?? '-'}${counts ? ` | ${counts}` : ''}`);
+    for (const p of st.pendingApprovals ?? []) lines.push(`  awaiting approval: ${p.ventureId} "${p.title}" ${usd(p.price)}`);
+    for (const v of st.live ?? []) lines.push(`  live: ${v.title} ${usd(v.price)} sales ${v.sales} revenue ${usd(v.revenue)} (${v.daysLive}d)`);
+    for (const b of st.blockers ?? []) lines.push(`  blocker: ${b}`);
   }
 
   if (status.supervisor?.lastCycle) {

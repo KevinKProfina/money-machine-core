@@ -1,6 +1,9 @@
 import crypto from 'node:crypto';
+import fsp from 'node:fs/promises';
 import http from 'node:http';
+import path from 'node:path';
 import { collectStatus } from './status.js';
+import { appendStudioDecision, resolvePreviewFile } from './studio.js';
 import { clearKillSwitch, setKillSwitch } from './supervisor.js';
 
 export type DashboardOptions = { host: string; port: number; adminToken?: string };
@@ -26,6 +29,28 @@ async function readBody(req: http.IncomingMessage, limit = 4_096): Promise<strin
   return body;
 }
 
+const PREVIEW_TYPES: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8',
+  '.md': 'text/plain; charset=utf-8',
+  '.txt': 'text/plain; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.xml': 'application/xml; charset=utf-8',
+};
+
+/** Checks the admin token; answers 403/401 itself and returns false when the request must stop. */
+function requireAdmin(req: http.IncomingMessage, res: http.ServerResponse, options: DashboardOptions): boolean {
+  if (!options.adminToken) {
+    sendJson(res, 403, { error: 'MM_ADMIN_TOKEN is not configured; use the CLI instead' });
+    return false;
+  }
+  if (!tokenMatches(req.headers.authorization, options.adminToken)) {
+    sendJson(res, 401, { error: 'unauthorized' });
+    return false;
+  }
+  return true;
+}
+
 export function createDashboardServer(options: DashboardOptions): http.Server {
   return http.createServer(async (req, res) => {
     try {
@@ -46,15 +71,55 @@ export function createDashboardServer(options: DashboardOptions): http.Server {
         sendJson(res, 200, { ok: true });
         return;
       }
+      if (req.method === 'GET' && url.pathname === '/studio-preview') {
+        // Generated (LLM-written) HTML: served sandboxed so it runs in an opaque origin and can't
+        // reach the dashboard API or the admin token kept in this origin's sessionStorage.
+        const file = resolvePreviewFile(url.searchParams.get('path') ?? '');
+        const type = file ? PREVIEW_TYPES[path.extname(file).toLowerCase()] : undefined;
+        if (!file || !type) {
+          sendJson(res, 404, { error: 'not found' });
+          return;
+        }
+        let body: Buffer;
+        try {
+          body = await fsp.readFile(file);
+        } catch {
+          sendJson(res, 404, { error: 'not found' });
+          return;
+        }
+        res.writeHead(200, { 'content-type': type, 'content-security-policy': 'sandbox', 'cache-control': 'no-store' });
+        res.end(body);
+        return;
+      }
+      if (req.method === 'POST' && url.pathname === '/api/studio/decision') {
+        if (!requireAdmin(req, res, options)) return;
+        let body: { ventureId?: unknown; decision?: unknown; note?: unknown };
+        try {
+          body = JSON.parse((await readBody(req)) || '{}');
+        } catch {
+          sendJson(res, 400, { error: 'invalid JSON' });
+          return;
+        }
+        if (typeof body.ventureId !== 'string' || (body.decision !== 'approved' && body.decision !== 'rejected')) {
+          sendJson(res, 400, { error: 'expected { ventureId, decision: "approved" | "rejected", note? }' });
+          return;
+        }
+        try {
+          await appendStudioDecision({
+            ventureId: body.ventureId,
+            decision: body.decision,
+            decidedBy: 'dashboard',
+            note: typeof body.note === 'string' ? body.note : undefined,
+          });
+        } catch (err) {
+          sendJson(res, 400, { error: (err as Error).message });
+          return;
+        }
+        sendJson(res, 200, { ok: true, note: 'recorded; the venture studio applies it on its next cycle' });
+        return;
+      }
       if (req.method === 'POST' && (url.pathname === '/api/kill' || url.pathname === '/api/resume')) {
-        if (!options.adminToken) {
-          sendJson(res, 403, { error: 'MM_ADMIN_TOKEN is not configured; use the CLI (npm run kill / npm run resume)' });
-          return;
-        }
-        if (!tokenMatches(req.headers.authorization, options.adminToken)) {
-          sendJson(res, 401, { error: 'unauthorized' });
-          return;
-        }
+        if (!requireAdmin(req, res, options)) return;
         if (url.pathname === '/api/kill') {
           const raw = await readBody(req);
           let reason = 'dashboard';
@@ -116,11 +181,28 @@ const DASHBOARD_HTML = `<!doctype html>
 <div id="banner"></div>
 <div class="grid" id="kpis"></div>
 <div class="card"><h2>Strategien</h2><table id="strategies"></table></div>
+<div class="card"><h2>Venture Studio</h2><div class="muted" id="studioMeta">keine Daten</div>
+  <div id="studioToken" style="margin:8px 0"><label class="muted">Admin-Token für Freigaben: <input id="tokenInput" type="password" autocomplete="off" style="max-width:220px"></label></div>
+  <table id="approvals"></table><table id="ventures"></table></div>
 <div class="card"><h2>Agenten-Arena</h2><div class="muted" id="arenaMeta">keine Daten</div><table id="arena"></table></div>
 <div class="card"><h2>Umsatzströme</h2><table id="revenue"></table></div>
 <div class="card"><h2>Letzter Zyklus</h2><table id="cycle"></table></div>
 <div class="card"><h2>Ereignisse</h2><table id="events"></table></div>
 <script>
+const tokenKey = 'mm-admin-token';
+function getToken() { try { return sessionStorage.getItem(tokenKey) || ''; } catch { return ''; } }
+document.addEventListener('DOMContentLoaded', () => {
+  const input = document.getElementById('tokenInput');
+  input.value = getToken();
+  input.addEventListener('change', () => { try { sessionStorage.setItem(tokenKey, input.value); } catch {} });
+});
+async function decide(ventureId, decision) {
+  const note = decision === 'rejected' ? (prompt('Grund (optional):') || '') : '';
+  const res = await fetch('/api/studio/decision', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + getToken() }, body: JSON.stringify({ ventureId, decision, note }) });
+  const body = await res.json().catch(() => ({}));
+  alert(res.ok ? (decision === 'approved' ? 'Freigegeben – wird im nächsten Zyklus veröffentlicht.' : 'Abgelehnt.') : 'Fehler: ' + (body.error || res.status));
+  refresh();
+}
 const usd = (n) => n == null || !isFinite(n) ? '–' : n.toLocaleString('de-DE', { style: 'currency', currency: 'USD' });
 const pct = (n) => n == null || !isFinite(n) ? '–' : (n * 100).toFixed(1) + ' %';
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
@@ -147,6 +229,18 @@ async function refresh() {
         '<span class="' + (x.status === 'active' ? 'ok' : 'warn') + '">' + esc(x.status) + '</span>', usd(alloc[x.name]),
         usd(x.realizedPnlUsd + x.unrealizedPnlUsd), pct(x.totalReturn), pct(x.winRate), pct(x.maxDrawdown), x.totalTrades,
         (x.stale ? '<span class="warn">veraltet</span> ' : '') + esc(new Date(x.lastUpdated).toLocaleTimeString('de-DE'))]));
+    const st = s.studio;
+    document.getElementById('studioMeta').textContent = st
+      ? 'Kanal ' + (st.channel || '–') + ' · ' + Object.entries(st.counts || {}).map(([k, v]) => k + ' ' + v).join(', ')
+        + ((st.blockers || []).length ? ' · Blocker: ' + st.blockers.join('; ') : '')
+      : 'keine Daten';
+    const preview = (p) => p ? '<a href="/studio-preview?path=' + encodeURIComponent(p) + '" target="_blank" rel="noopener">Vorschau</a>' : '–';
+    table('approvals', ['Wartet auf Freigabe', 'Preis', 'Seit', 'Vorschau', ''],
+      ((st && st.pendingApprovals) || []).map((p) => [esc(p.title), usd(p.price), esc(new Date(p.requestedAt).toLocaleString('de-DE')), preview(p.previewPath),
+        '<button data-id="' + esc(p.ventureId) + '" data-d="approved">Freigeben</button> <button data-id="' + esc(p.ventureId) + '" data-d="rejected">Ablehnen</button>']));
+    for (const b of document.querySelectorAll('#approvals button')) b.onclick = () => decide(b.dataset.id, b.dataset.d);
+    table('ventures', ['Live-Produkt', 'Preis', 'Verkäufe', 'Umsatz', 'Tage live'],
+      ((st && st.live) || []).map((v) => [v.url ? '<a href="' + esc(v.url) + '" target="_blank" rel="noopener">' + esc(v.title) + '</a>' : esc(v.title), usd(v.price), v.sales, usd(v.revenue), v.daysLive]));
     const a = s.arena;
     document.getElementById('arenaMeta').textContent = a
       ? 'Zyklus ' + a.cycle + ' · Population ' + a.population + ' · max. Generation ' + a.maxGeneration + ' · Kapital ' + usd(a.equityUsd) + ' · Treasury ' + usd(a.treasuryUsd)
