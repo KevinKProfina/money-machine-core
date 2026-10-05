@@ -242,6 +242,8 @@ async function refresh() {
     const st = s.studio;
     document.getElementById('studioMeta').textContent = st
       ? 'Kanal ' + (st.channel || '–') + ' · ' + Object.entries(st.counts || {}).map(([k, v]) => k + ' ' + v).join(', ')
+        + (st.traffic && st.traffic.enabled ? ' · Besuche 7T ' + ((st.traffic.last7d && st.traffic.last7d.visits) || 0) + ' / 30T ' + ((st.traffic.last30d && st.traffic.last30d.visits) || 0) : '')
+        + ((st.attention || []).length ? ' · Achtung: ' + st.attention.map((a) => (a.title || a.ventureId) + ' – ' + (a.message || a.diagnosis)).join('; ') : '')
         + ((st.blockers || []).length ? ' · Blocker: ' + st.blockers.join('; ') : '')
       : 'keine Daten';
     // previewPath is the venture's preview directory (landing.html + product.html)
@@ -251,8 +253,14 @@ async function refresh() {
       ((st && st.pendingApprovals) || []).map((p) => [esc(p.title), usd(p.price), esc(new Date(p.requestedAt).toLocaleString('de-DE')), preview(p.previewPath),
         '<button data-id="' + esc(p.ventureId) + '" data-d="approved">Freigeben</button> <button data-id="' + esc(p.ventureId) + '" data-d="rejected">Ablehnen</button>']));
     for (const b of document.querySelectorAll('#approvals button')) b.onclick = () => decide(b.dataset.id, b.dataset.d);
-    table('ventures', ['Live-Produkt', 'Preis', 'Verkäufe', 'Umsatz', 'Tage live'],
-      ((st && st.live) || []).map((v) => [v.url ? '<a href="' + esc(v.url) + '" target="_blank" rel="noopener">' + esc(v.title) + '</a>' : esc(v.title), usd(v.price), v.sales, usd(v.revenue), v.daysLive]));
+    const diagLabel = { 'no-traffic': 'kaum Besucher', 'no-interest': 'kein Interesse', 'checkout-friction': 'Kaufabbrüche', converting: 'verkauft', unknown: '–' };
+    table('ventures', ['Live-Produkt', 'Preis', 'Besuche', 'Kauf-Klicks', 'Checkouts', 'Verkäufe', 'Umsatz', 'Tage live', 'Diagnose'],
+      ((st && st.live) || []).map((v) => {
+        const f = v.funnel || {};
+        return [v.url ? '<a href="' + esc(v.url) + '" target="_blank" rel="noopener">' + esc(v.title) + '</a>' : esc(v.title), usd(v.price),
+          f.visits ?? '–', f.buyClicks ?? '–', f.checkoutsStarted ?? '–', v.sales, usd(v.revenue), v.daysLive,
+          '<span title="' + esc(f.diagnosisReason || '') + '">' + esc(diagLabel[v.diagnosis] || v.diagnosis || '–') + '</span>'];
+      }));
     const a = s.arena;
     document.getElementById('arenaMeta').textContent = a
       ? 'Zyklus ' + a.cycle + ' · Population ' + a.population + ' · max. Generation ' + a.maxGeneration + ' · Kapital ' + usd(a.equityUsd) + ' · Treasury ' + usd(a.treasuryUsd)

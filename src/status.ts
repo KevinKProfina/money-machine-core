@@ -190,7 +190,13 @@ export function formatStatus(status: SystemStatus): string {
     const counts = Object.entries(st.counts ?? {}).map(([k, v]) => `${k} ${v}`).join(', ');
     lines.push(`Venture studio: channel ${st.channel ?? '-'}${counts ? ` | ${counts}` : ''}`);
     for (const p of st.pendingApprovals ?? []) lines.push(`  awaiting approval: ${p.ventureId} "${p.title}" ${usd(p.price)}`);
-    for (const v of st.live ?? []) lines.push(`  live: ${v.title} ${usd(v.price)} sales ${v.sales} revenue ${usd(v.revenue)} (${v.daysLive}d)`);
+    if (st.traffic?.enabled) lines.push(`  traffic: 7d ${st.traffic.last7d?.visits ?? 0} visits, 30d ${st.traffic.last30d?.visits ?? 0} visits${st.traffic.error ? ` (error: ${st.traffic.error})` : ''}`);
+    for (const v of st.live ?? []) {
+      const f = v.funnel;
+      const funnel = f ? ` | visits ${f.visits ?? 0} → clicks ${f.buyClicks ?? 0} → checkouts ${f.checkoutsStarted ?? 0} → sales ${f.sales ?? v.sales}` : '';
+      lines.push(`  live: ${v.title} ${usd(v.price)} sales ${v.sales} revenue ${usd(v.revenue)} (${v.daysLive}d)${funnel}${v.diagnosis ? ` [${v.diagnosis}]` : ''}`);
+    }
+    for (const a of st.attention ?? []) lines.push(`  attention: ${a.title ?? a.ventureId ?? ''}: ${a.message ?? a.diagnosis ?? ''}`);
     for (const b of st.blockers ?? []) lines.push(`  blocker: ${b}`);
   }
 

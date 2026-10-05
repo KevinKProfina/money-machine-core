@@ -48,6 +48,12 @@
       "dir": "agent-marketplace",
       "type": "daemon",
       "script": "start"
+    },
+    {
+      "name": "analytics-collector",
+      "dir": "./components/analytics-collector",
+      "type": "daemon",
+      "script": "start"
     }
   ]
 }

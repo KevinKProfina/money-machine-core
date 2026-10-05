@@ -17,7 +17,7 @@ ENV NODE_ENV=production \
     MM_DASHBOARD_HOST=0.0.0.0 \
     HOST=0.0.0.0
 VOLUME ["/data", "/backups"]
-EXPOSE 8780 8790
+EXPOSE 8780 8790 8791
 
 # /health answers 503 when no cycle finished recently (supervisor hung or crashed)
 HEALTHCHECK --interval=60s --timeout=10s --start-period=120s --retries=3 \

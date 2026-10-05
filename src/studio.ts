@@ -18,7 +18,20 @@ export type StudioSummary = {
   counts?: Record<string, number>;
   /** previewPath is a directory containing landing.html and product.html */
   pendingApprovals?: { ventureId: string; title: string; price: number; currency?: string; requestedAt: string; previewPath?: string }[];
-  live?: { title: string; slug: string; url?: string; price: number; sales: number; revenue: number; daysLive: number }[];
+  live?: {
+    title: string;
+    slug: string;
+    url?: string;
+    price: number;
+    sales: number;
+    revenue: number;
+    daysLive: number;
+    funnel?: { visits?: number; uniqueVisitors?: number; buyClicks?: number; checkoutsStarted?: number; sales?: number; diagnosisReason?: string };
+    /** no-traffic | no-interest | checkout-friction | converting | unknown */
+    diagnosis?: string;
+  }[];
+  traffic?: { enabled?: boolean; source?: string; error?: string; last7d?: { visits?: number; buyClicks?: number }; last30d?: { visits?: number; buyClicks?: number } };
+  attention?: { ventureId?: string; title?: string; diagnosis?: string; message?: string }[];
   parkedOpportunities?: { title: string; autonomyScore: number; humanSteps?: string[] }[];
   blockers?: string[];
 };

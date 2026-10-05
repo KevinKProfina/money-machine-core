@@ -75,11 +75,24 @@ export class Supervisor {
     private sendAlert: AlertSender | undefined = telegramSender(),
   ) {}
 
+  private daemonRestartsSeen = new Map<string, number>();
+
+  /** Daemons that restarted since the last check, or can't start at all (alerted like a failing step). */
+  private crashingDaemons(): string[] {
+    const out: string[] = [];
+    for (const d of this.daemons) {
+      const prev = this.daemonRestartsSeen.get(d.state.name) ?? 0;
+      if (d.state.problem || d.state.restarts > prev) out.push(d.state.name);
+      this.daemonRestartsSeen.set(d.state.name, d.state.restarts);
+    }
+    return out;
+  }
+
   private async alert(steps: StepResult[]): Promise<void> {
     if (!this.sendAlert) return;
     const status = await collectStatus();
     const next: AlertState = {
-      failing: steps.filter((s) => !s.ok).map((s) => s.name).sort(),
+      failing: [...steps.filter((s) => !s.ok).map((s) => s.name), ...this.crashingDaemons()].sort(),
       killSwitch: status.killSwitch.active || Boolean(status.allocations?.killSwitch),
       live: status.strategies.filter((s) => s.mode === 'live').map((s) => s.name).sort(),
     };
