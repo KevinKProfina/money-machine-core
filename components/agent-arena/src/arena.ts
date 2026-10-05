@@ -27,6 +27,12 @@ export type ArenaDeps = {
   emit: EmitFn;
   log?: (msg: string) => void;
   llm?: LlmClient;
+  /**
+   * false = evaluation mode (backtests of fixed genomes): no upkeep, deaths,
+   * reproduction, LLM step or respawns — only marking, the species' own decisions,
+   * paper fills, stale write-offs and the ledger. Default true (full lifecycle).
+   */
+  lifecycle?: boolean;
 };
 
 export class InvariantError extends Error {
@@ -143,6 +149,7 @@ export class Arena {
       debtUsd: 0,
       givenUsd: 0,
       peakBalanceUsd: capitalUsd,
+      maxDrawdown: 0,
       positions: [],
       cooldownUntil: 0,
       children: 0,
@@ -325,6 +332,16 @@ export class Arena {
       if (!allowEntries) continue;
       for (const intent of intents) if (intent.kind === 'buy') this.openPosition(agent, intent.mint, intent.sizeUsd);
     }
+  }
+
+  /**
+   * Close every open position of every agent at the current snapshot (paper fills;
+   * positions without a price this cycle are written off). Used at the end of a
+   * backtest so results are net of exit costs.
+   */
+  liquidateAll(reason = 'end-of-data'): void {
+    for (const a of this.state.agents) for (const p of [...a.positions]) this.closePosition(a, p, reason);
+    this.checkInvariant();
   }
 
   private writeOffStale() {
@@ -546,16 +563,23 @@ export class Arena {
     // While paused/killed the budget is not followed (no forced levies); only exits run.
     if (control.budgetUsd !== undefined && !control.paused) this.followBudget(control.budgetUsd);
 
-    for (const a of s.agents) this.chargeUpkeep(a);
+    const lifecycle = this.deps.lifecycle !== false;
+    if (lifecycle) for (const a of s.agents) this.chargeUpkeep(a);
     this.actAll(!control.paused && this.snapshot.ok);
     this.writeOffStale();
-    this.deaths();
-    if (!control.paused) {
-      this.reproduce();
-      await this.llmStep();
-      this.respawn();
+    if (lifecycle) {
+      this.deaths();
+      if (!control.paused) {
+        this.reproduce();
+        await this.llmStep();
+        this.respawn();
+      }
     }
-    for (const a of s.agents) a.peakBalanceUsd = Math.max(a.peakBalanceUsd, agentBalance(a));
+    for (const a of s.agents) {
+      const balance = agentBalance(a);
+      a.peakBalanceUsd = Math.max(a.peakBalanceUsd, balance);
+      if (a.peakBalanceUsd > 0) a.maxDrawdown = Math.max(a.maxDrawdown ?? 0, Math.min(1, Math.max(0, (a.peakBalanceUsd - balance) / a.peakBalanceUsd)));
+    }
 
     // equity curve + drawdown (on equity net of budget flows, so deposits/withdrawals are not "drawdowns")
     const equityUsd = arenaEquity(s);

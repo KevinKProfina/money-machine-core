@@ -20,7 +20,8 @@ export type Token = {
   priceChange: PriceChange;
 };
 
-export type MarketSourceId = 'dexscreener' | 'synthetic';
+/** `replay` = historical candles (GeckoTerminal) replayed by the backtester; never used by the live loop. */
+export type MarketSourceId = 'dexscreener' | 'synthetic' | 'replay';
 
 export type MarketSnapshot = {
   source: MarketSourceId;

@@ -8,6 +8,9 @@ import { emitEvent, isKillSwitchActive, readJsonSafe, readStrategyBudget, stateP
 import { createAnthropicClient, type LlmClient } from './mutator.js';
 import { buildStrategyReport, buildSummary, type ArenaSummary } from './report.js';
 import { arenaPaths, loadState, saveState } from './state.js';
+import { updatePromotions, type PromotionsFile } from './promotion.js';
+import { genomeId, type Genome } from './genome.js';
+import { traderSpecies } from './species/trader.js';
 import { SyntheticMarket, type SyntheticMarketState } from './synthetic-market.js';
 
 export type RunnerOptions = {
@@ -38,6 +41,7 @@ export class ArenaRunner {
     readonly arena: Arena,
     private readonly market: MarketSource,
     private readonly now: () => Date,
+    private readonly emit: EmitFn,
   ) {}
 
   get state() {
@@ -55,6 +59,7 @@ export class ArenaRunner {
     if (state.market !== cfg.market) {
       log(`[arena] market source changed ${state.market} → ${cfg.market}; positions without a price are written off after ${cfg.staleWriteOffCycles} cycles`);
       state.market = cfg.market;
+      state.marketSinceCycle = state.cycle;
     }
 
     let market = opts.market;
@@ -80,7 +85,9 @@ export class ArenaRunner {
       llm,
     });
     if (fresh) arena.genesis();
-    return new ArenaRunner(cfg, arena, market, now);
+    const emit = opts.emit ?? emitEvent;
+    if (cfg.adoptPretrained && cfg.market === 'dexscreener') await adoptPretrained(arena, log);
+    return new ArenaRunner(cfg, arena, market, now, emit);
   }
 
   async cycle(control?: ArenaControl): Promise<CycleResult> {
@@ -88,7 +95,7 @@ export class ArenaRunner {
   }
 
   /** Persist population + graveyard (+ synthetic market) and write the StrategyReport and summary. */
-  async persist(): Promise<{ report: StrategyReport; summary: ArenaSummary }> {
+  async persist(): Promise<{ report: StrategyReport; summary: ArenaSummary; promotions: PromotionsFile }> {
     const now = this.now();
     await saveState(this.arena.state, this.arena.graveyard);
     if (this.market instanceof SyntheticMarket) await writeJsonAtomic(arenaPaths.syntheticMarket(), this.market.exportState());
@@ -96,6 +103,40 @@ export class ArenaRunner {
     const summary = buildSummary(this.arena.state, this.arena.graveyard, this.cfg, now);
     await writeJsonAtomic(statePaths.strategy(STRATEGY_NAME), report);
     await writeJsonAtomic(arenaPaths.summary(), summary);
-    return { report, summary };
+    const { file: promotions } = await updatePromotions(this.arena.state, this.cfg.promotion, this.cfg.intervalMs / 60_000, now, this.emit);
+    return { report, summary, promotions };
   }
+}
+
+export type PretrainedFile = {
+  schema: 'mm.arena-pretrained/v1';
+  createdAt: string;
+  dataSource: string;
+  genomes: Array<{ genomeId: string; genome: Genome; oosReturn: number | null }>;
+};
+
+/**
+ * Spawn genomes pre-trained on real history (`backtest --evolve`) into the live
+ * population once each, as `designed` agents paid from the treasury. Only genomes
+ * with a positive out-of-sample backtest return are adopted.
+ */
+export async function adoptPretrained(arena: Arena, log: (msg: string) => void): Promise<string[]> {
+  const file = await readJsonSafe<PretrainedFile | null>(arenaPaths.pretrained(), null);
+  if (!file || file.schema !== 'mm.arena-pretrained/v1' || !Array.isArray(file.genomes) || file.dataSource !== 'geckoterminal') return [];
+  const s = arena.state;
+  const adopted = new Set(s.pretrainedAdopted ?? []);
+  const spawned: string[] = [];
+  for (const g of file.genomes) {
+    if (!(typeof g.oosReturn === 'number' && g.oosReturn > 0)) continue;
+    const genome = traderSpecies.validate(g.genome, g.genome).genome;
+    const id = genomeId(genome);
+    if (adopted.has(id)) continue;
+    const agent = arena.spawnFromTreasury('designed', genome);
+    if (!agent) break;
+    adopted.add(id);
+    spawned.push(agent.id);
+  }
+  s.pretrainedAdopted = [...adopted];
+  if (spawned.length) log(`[arena] adopted ${spawned.length} pre-trained genome(s) from ${arenaPaths.pretrained()}: ${spawned.join(', ')}`);
+  return spawned;
 }

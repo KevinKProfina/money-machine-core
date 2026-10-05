@@ -9,12 +9,12 @@ dotenv.config({ quiet: true });
 async function once(runner: ArenaRunner): Promise<void> {
   const started = Date.now();
   await runner.cycle();
-  const { report, summary } = await runner.persist();
+  const { report, summary, promotions } = await runner.persist();
   console.log(
     `[arena] cycle=${summary.cycle} market=${summary.marketSource}${summary.marketOk ? '' : '(FAILED)'} status=${report.status} ` +
       `pop=${summary.population} births=${summary.births.lastCycle} deaths=${summary.deaths.lastCycle} maxGen=${summary.maxGeneration} ` +
       `equity=$${summary.equityUsd.toFixed(2)} treasury=$${summary.treasuryUsd.toFixed(2)} realized=$${report.realizedPnlUsd} ` +
-      `unrealized=$${report.unrealizedPnlUsd} trades=${report.totalTrades} (${Date.now() - started} ms)`,
+      `unrealized=$${report.unrealizedPnlUsd} trades=${report.totalTrades} promoted=${promotions.promoted?.genomeId ?? 'none'} (${Date.now() - started} ms)`,
   );
 }
 

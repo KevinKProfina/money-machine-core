@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type { Rng } from './rng.js';
 
 /** A genome is a flat record of named numeric genes. */
@@ -103,4 +104,18 @@ export function isWithinBounds(spec: GenomeSpec, genome: Genome): boolean {
     const v = genome[k];
     return typeof v === 'number' && Number.isFinite(v) && v >= s.min && v <= s.max && (!(s.integer || s.categorical) || Number.isInteger(v));
   });
+}
+
+/**
+ * Stable content id of a genome: `g-` + 12 hex chars of sha256 over the genes sorted
+ * by name, each rounded to 6 significant digits. Identical strategies (e.g. a clone
+ * in the live arena and the same genome in a backtest) share one id, so evidence
+ * from both can be joined.
+ */
+export function genomeId(genome: Genome): string {
+  const canon = Object.keys(genome)
+    .sort()
+    .map((k) => `${k}=${Number(genome[k]!.toPrecision(6))}`)
+    .join(';');
+  return `g-${createHash('sha256').update(canon).digest('hex').slice(0, 12)}`;
 }

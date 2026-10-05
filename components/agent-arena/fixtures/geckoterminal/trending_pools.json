@@ -1,0 +1,65 @@
+{
+  "data": [
+    {
+      "id": "solana_PoolAAA111111111111111111111111111111111",
+      "type": "pool",
+      "attributes": {
+        "base_token_price_usd": "0.00125",
+        "base_token_price_native_currency": "0.0000083",
+        "quote_token_price_usd": "150.2",
+        "address": "PoolAAA111111111111111111111111111111111",
+        "name": "AAA / SOL",
+        "pool_created_at": "2026-09-20T12:00:00Z",
+        "fdv_usd": "1250000",
+        "market_cap_usd": null,
+        "price_change_percentage": { "m5": "1.2", "h1": "-3.5", "h6": "10", "h24": "45.1" },
+        "transactions": {
+          "m5": { "buys": 10, "sells": 7, "buyers": 9, "sellers": 6 },
+          "h24": { "buys": 5400, "sells": 4100, "buyers": 2000, "sellers": 1500 }
+        },
+        "volume_usd": { "m5": "1500", "h1": "21000", "h6": "120000", "h24": "830000.5" },
+        "reserve_in_usd": "210000.75"
+      },
+      "relationships": {
+        "base_token": { "data": { "id": "solana_MintAAA11111111111111111111111111111pump", "type": "token" } },
+        "quote_token": { "data": { "id": "solana_So11111111111111111111111111111111111111112", "type": "token" } },
+        "dex": { "data": { "id": "raydium", "type": "dex" } }
+      }
+    },
+    {
+      "id": "solana_PoolBBB222222222222222222222222222222222",
+      "type": "pool",
+      "attributes": {
+        "base_token_price_usd": "2.5",
+        "address": "PoolBBB222222222222222222222222222222222",
+        "name": "BBB / USDC",
+        "pool_created_at": null,
+        "fdv_usd": null,
+        "market_cap_usd": "9000000",
+        "price_change_percentage": { "h24": "-12" },
+        "transactions": { "h24": { "buys": 100, "sells": 120 } },
+        "volume_usd": { "h24": "50000" },
+        "reserve_in_usd": "90000"
+      },
+      "relationships": {
+        "base_token": { "data": { "id": "solana_MintBBB22222222222222222222222222222222", "type": "token" } },
+        "dex": { "data": { "id": "orca", "type": "dex" } }
+      }
+    },
+    {
+      "id": "solana_PoolAAA_thin",
+      "type": "pool",
+      "attributes": {
+        "base_token_price_usd": "0.00124",
+        "address": "PoolAAAthin",
+        "name": "AAA / USDC",
+        "reserve_in_usd": "5000",
+        "volume_usd": { "h24": "100" }
+      },
+      "relationships": {
+        "base_token": { "data": { "id": "solana_MintAAA11111111111111111111111111111pump", "type": "token" } }
+      }
+    },
+    { "id": "", "type": "pool", "attributes": {} }
+  ]
+}

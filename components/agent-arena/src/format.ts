@@ -3,7 +3,7 @@ import { RANK_BY } from './species/trader.js';
 
 const pad = (s: string, n: number) => (s.length >= n ? s.slice(0, n) : s + ' '.repeat(n - s.length));
 const lpad = (s: string, n: number) => (s.length >= n ? s : ' '.repeat(n - s.length) + s);
-const pct = (x: number) => `${(x * 100).toFixed(1)}%`;
+export const pct = (x: number) => `${(x * 100).toFixed(1)}%`;
 
 export function genomeBrief(g: Record<string, number>): string {
   const f = (k: string, d = 0) => (g[k] === undefined ? '?' : g[k]!.toFixed(d));

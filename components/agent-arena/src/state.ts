@@ -59,6 +59,13 @@ export type ArenaState = {
   nextAgentId: number;
   nextPositionId: number;
   market: MarketSourceId;
+  /**
+   * Cycle at which the current market source took over (0 or absent = since genesis).
+   * Agents born before it have a track record that mixes sources; promotion ignores them.
+   */
+  marketSinceCycle?: number;
+  /** Genome ids from arena/pretrained.json already spawned into this population. */
+  pretrainedAdopted?: string[];
   treasuryUsd: number;
   ledger: Ledger;
   agents: Agent[];
@@ -115,6 +122,12 @@ export const arenaPaths = {
   graveyard: () => path.join(stateDir(), 'arena', 'graveyard.json'),
   summary: () => path.join(stateDir(), 'arena', 'summary.json'),
   syntheticMarket: () => path.join(stateDir(), 'arena', 'synthetic-market.json'),
+  historyDir: () => path.join(stateDir(), 'arena', 'history'),
+  backtestsDir: () => path.join(stateDir(), 'arena', 'backtests'),
+  backtestLatest: () => path.join(stateDir(), 'arena', 'backtests', 'latest.json'),
+  backtestResults: () => path.join(stateDir(), 'arena', 'backtests', 'results.json'),
+  pretrained: () => path.join(stateDir(), 'arena', 'pretrained.json'),
+  promotions: () => path.join(stateDir(), 'arena', 'promotions.json'),
 };
 
 export function emptyGraveyard(): Graveyard {

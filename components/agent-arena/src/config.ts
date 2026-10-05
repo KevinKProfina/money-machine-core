@@ -47,6 +47,30 @@ export type ArenaConfig = {
 
   equityCurveMax: number;
   graveyardMax: number;
+
+  /** Spawn genomes from arena/pretrained.json (written by `backtest --evolve`) once into the live population. */
+  adoptPretrained: boolean;
+  promotion: PromotionCriteria;
+};
+
+/** Gates a genome must pass before it is promoted to the real (paper-by-default) trader. */
+export type PromotionCriteria = {
+  /** Min cycles the agent has lived in the live (non-synthetic) arena. */
+  minCycles: number;
+  /** Min closed paper trades in the arena. */
+  minTrades: number;
+  /** Max drawdown of the agent's arena balance (0..1). */
+  maxDrawdown: number;
+  /** Min closed trades in the out-of-sample backtest windows. */
+  minOosTrades: number;
+  /** Out-of-sample return after costs must be strictly above this (fraction). */
+  minOosReturn: number;
+  /** Max out-of-sample drawdown (0..1). */
+  maxOosDrawdown: number;
+  /** A challenger must beat the promoted strategy's score by this much. */
+  margin: number;
+  /** Backtest evidence older than this is ignored. */
+  maxBacktestAgeHours: number;
 };
 
 export class ConfigError extends Error {
@@ -135,5 +159,17 @@ export function readConfig(env: Env = process.env): ArenaConfig {
 
     equityCurveMax: 500,
     graveyardMax: 500,
+
+    adoptPretrained: (env.ARENA_ADOPT_PRETRAINED ?? '1').trim() !== '0',
+    promotion: {
+      minCycles: num(env, 'ARENA_PROMO_MIN_CYCLES', 288, 0, 1e9, true),
+      minTrades: num(env, 'ARENA_PROMO_MIN_TRADES', 10, 0, 1e9, true),
+      maxDrawdown: num(env, 'ARENA_PROMO_MAX_DRAWDOWN', 0.3, 0, 1),
+      minOosTrades: num(env, 'ARENA_PROMO_MIN_OOS_TRADES', 5, 0, 1e9, true),
+      minOosReturn: num(env, 'ARENA_PROMO_MIN_OOS_RETURN', 0, -1, 100),
+      maxOosDrawdown: num(env, 'ARENA_PROMO_MAX_OOS_DRAWDOWN', 0.3, 0, 1),
+      margin: num(env, 'ARENA_PROMO_MARGIN', 0.02, 0, 100),
+      maxBacktestAgeHours: num(env, 'ARENA_PROMO_MAX_BACKTEST_AGE_HOURS', 168, 1, 1e6),
+    },
   };
 }

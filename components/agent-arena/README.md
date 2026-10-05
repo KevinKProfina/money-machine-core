@@ -14,12 +14,15 @@ profit — see [Limitations](#status--limitations).
 
 - **Population** of agents of a pluggable **species**. Implemented now: `trader`.
 - **Shared market snapshot** fetched once per cycle for all agents (DexScreener by
-  default, or a seeded synthetic market). Mints held by any agent are always
+  default, or a seeded synthetic market; backtests replay GeckoTerminal history). Mints held by any agent are always
   re-priced, even when they dropped out of discovery.
 - **Paper fills**: fee bps + slippage bps + constant-product price impact from pool
   liquidity (ported from `solana-trading-agent`'s `PaperExecutor`). Additionally,
   agents hitting the same pool in the same cycle pay the impact of the cumulative
   same-direction flow, so crowded trades get worse fills.
+- **Historical backtests + pre-training** on real GeckoTerminal candles with
+  walk-forward out-of-sample evaluation, and a **promotion pipeline** that hands the
+  best validated genome to `solana-trading-agent` (paper by default) — see below.
 - **Lifecycle**: upkeep → act (exits first, then entries) → stale write-offs →
   deaths → reproduction → optional Claude "mutator" → min-population refill and
   random immigrants from the treasury.
@@ -80,6 +83,108 @@ price it is written off at zero (a price is never invented).
 - **Lineage**: id, parentId, generation, origin (`genesis`/`spawn`/`birth`/`designed`),
   bornCycle/bornAt, diedCycle/diedAt, cause of death.
 
+### Historical backtests on real data (GeckoTerminal)
+
+`npm run backtest` replays real Solana pool history through the **unchanged arena
+engine**: `ReplayMarket` (`src/replay-market.ts`) is just another `MarketSource`, and
+fixed genomes run in an `Arena` with `lifecycle: false` (no upkeep, deaths or births),
+so entry/exit decisions (`species/trader.ts`), paper fills (`paper.ts`), stale
+write-offs and the ledger are exactly the code the live arena uses. Open positions are
+paper-sold at the end of each window, so results are net of exit costs.
+
+- **Data**: GeckoTerminal public API, no key (`src/geckoterminal.ts`). Pools come from
+  `/networks/solana/trending_pools` then `/networks/solana/pools?page=N` (one pool per
+  base token, the deepest wins); candles from
+  `/pools/{pool}/ohlcv/{minute|hour|day}?aggregate=n&limit=1000&before_timestamp=…&currency=usd`,
+  paged backwards. All requests share one throttle (≥ 2.1 s apart, under the public
+  ~30 req/min) and retry 429/5xx/network errors with exponential backoff (honouring
+  `Retry-After`).
+- **Cache**: `$MM_STATE_DIR/arena/history/<pool>-<timeframe><aggregate>.json`
+  (e.g. `…-minute5.json`) remembers the covered range; repeated backtests only fetch
+  missing edges, `--offline` never touches the network. The still-open candle is never
+  cached. `history/pools.json` keeps the last discovered pool list (used offline or
+  when discovery fails).
+- **Replay snapshot at virtual time T** (one step = timeframe × aggregate):
+  price = close of the last candle that has *closed* by T (forward-filled through
+  no-trade gaps; a pool is an entry candidate only if it traded within the last hour
+  and keeps a price for held positions for 24 h); `priceChange.m5/h1/h24` = close vs the
+  last close at or before T−5m/1h/24h (absent when history does not reach back, m5 absent
+  for steps > 5 min); `volume24hUsd` = sum over candles closed in (T−24h, T]; `ageHours`
+  from `pool_created_at`. **Proxies** (OHLCV has no history for these):
+  `liquidityUsd` = discovery-time `reserve_in_usd` × sqrt(price_T / discovery price)
+  (constant-product pool value ∝ √price), `marketCapUsd` = discovery FDV × price ratio,
+  `buys24h/sells24h` = USD volume of up-/down-candles in $100 units (only the ratio is
+  meaningful).
+- **No lookahead**: a candle with open time t is only visible from t + step. Tests
+  rewrite or delete every candle not closed by T and assert that the snapshot — and
+  every position/cash value of a full backtest up to T — is unchanged.
+- **Walk-forward**: the window is split into `--folds` consecutive test windows over the
+  last `1 − --train-frac` of the history, each with an expanding train window before it.
+  Reported separately: *in-sample* (first train window) and *out-of-sample* (test windows,
+  compounded). **Promotion only uses out-of-sample numbers.**
+- **Metrics per genome**: return (after fees, slippage, impact and final liquidation),
+  trades, win rate, max drawdown of the step equity curve, per-trade Sharpe (mean/stdev
+  of trade returns, not annualised), exposure (average fraction of equity in positions)
+  and time in market.
+- **`--evolve`**: the full evolutionary lifecycle (upkeep, deaths, reproduction,
+  immigrants; no LLM) on each fold's *train* window with a virtual clock (`--epochs n`
+  passes); the best `--top` living genomes are then backtested on the later test
+  windows only. This is the real-data pre-training of the population: genomes are
+  written to `arena/pretrained.json`, and the live arena (market `dexscreener`) spawns
+  those with a positive out-of-sample return once each as `designed` agents
+  (`ARENA_ADOPT_PRETRAINED=1`).
+
+```bash
+npm run backtest -- --pools 20 --days 7 --timeframe minute --aggregate 5            # leaderboard genomes
+npm run backtest -- --pools 20 --days 14 --genomes population --folds 3 --train-frac 0.5
+npm run backtest -- --pools 20 --days 7 --genomes my-genomes.json                  # [genome…] or {genomes:[…]}
+npm run backtest -- --pools 20 --days 7 --genomes random:20 --seed 3               # random baseline
+npm run backtest -- --pools 20 --days 14 --evolve --epochs 3 --top 5 --seed 1      # pre-train on history
+npm run backtest -- --offline --days 7 --genomes leaderboard                       # cached data only
+```
+
+Other flags: `--capital` (per-genome starting capital, default $100), `--offline`.
+Fee/slippage come from `ARENA_FEE_BPS` / `ARENA_SLIPPAGE_BPS`. A 20-pool, 7-day,
+5-minute download is ~20 × 3 = 60 requests ≈ 2–3 minutes because of the throttle; the
+replay itself takes well under a second per genome. Outputs:
+`arena/backtests/latest.json` (`mm.arena-backtest/v1`, this run),
+`arena/backtests/results.json` (latest result per genome id; promotion evidence),
+`arena/pretrained.json` (`--evolve`). After every backtest `promotions.json` is
+re-evaluated.
+
+### Promotion to solana-trading-agent
+
+Every cycle (and after every backtest) the arena writes
+`$MM_STATE_DIR/arena/promotions.json` (`mm.arena-promotions/v1`): the top candidates
+(living trader agents, plus backtested genomes without a living agent for visibility),
+each with `genomeId` (stable content hash of the genome, so arena agents and backtests
+of the same genome join), `agentId`, `genome`, `evidence { liveArenaCycles, arenaTrades,
+arenaReturn, arenaMaxDrawdown, backtestOos { return, trades, maxDrawdown, sharpe } }`,
+`score`, `eligible` and `reasons`; the current `promoted` strategy and a `history`.
+
+A candidate is eligible only if **all** of these hold (env defaults in brackets):
+
+- the live arena runs on real data (`ARENA_MARKET=dexscreener`) — **never from
+  `synthetic-market-data`** (nor from a replay population) — and the agent was born
+  after the current market source took over;
+- arena age ≥ `ARENA_PROMO_MIN_CYCLES` [288 ≈ 1 day], closed trades ≥
+  `ARENA_PROMO_MIN_TRADES` [10], arena drawdown ≤ `ARENA_PROMO_MAX_DRAWDOWN` [0.3];
+- a GeckoTerminal backtest of the same genome, not older than
+  `ARENA_PROMO_MAX_BACKTEST_AGE_HOURS` [168], with step length = arena cycle length,
+  whose **out-of-sample** return after simulated costs is > `ARENA_PROMO_MIN_OOS_RETURN`
+  [0], with ≥ `ARENA_PROMO_MIN_OOS_TRADES` [5] trades and drawdown ≤
+  `ARENA_PROMO_MAX_OOS_DRAWDOWN` [0.3].
+
+`score = oosReturn − 0.5·oosMaxDrawdown + 0.25·clamp(arenaReturn, −1, 1) − 0.25·arenaMaxDrawdown`.
+The best eligible candidate is promoted when nothing is promoted yet or when it beats
+the promoted strategy's current score by `ARENA_PROMO_MARGIN` [0.02]. A promoted genome
+is demoted (the trader falls back to static) when a fresh backtest of it fails the
+out-of-sample criteria. Events: `arena.strategy-promoted`, `arena.strategy-demoted`.
+
+The trader only uses it with `STRATEGY_SOURCE=arena`; see its README for the
+genome → settings mapping. **Promotion never enables live trading** — it carries
+strategy parameters only, and the trader's mode resolution is unchanged.
+
 ### Optional Claude mutator
 
 If `ANTHROPIC_API_KEY` is set, every `ARENA_LLM_EVERY` cycles the arena sends Claude
@@ -118,10 +223,14 @@ using a worst-case estimate. No key → the step is skipped; evolution runs on i
   3. `arena/population.json` (living agents + open positions + ledger + RNG state),
      `arena/graveyard.json` (last 500 dead + aggregate stats),
      `arena/synthetic-market.json` (synthetic market state). All atomic writes.
-  4. Events (`events.jsonl`): `arena.generation-milestone` (first agent reaching
+  4. `arena/promotions.json` — `mm.arena-promotions/v1`, read by solana-trading-agent
+     when it runs with `STRATEGY_SOURCE=arena` (see above).
+  5. Events (`events.jsonl`): `arena.generation-milestone` (first agent reaching
      generation 2, 5, 10, 20, 50, …), `arena.mass-extinction` (> 50 % of the
      population died in one cycle), `arena.llm-batch-spawned`,
-     `arena.invariant-violated`, `cycle.failed`, `fatal`, `config.refused`.
+     `arena.strategy-promoted`, `arena.strategy-demoted`,
+     `arena.invariant-violated`, `cycle.failed`, `fatal`, `config.refused`,
+     `backtest.failed`.
 
 ## Setup
 
@@ -139,6 +248,7 @@ Node 22, ESM, TypeScript strict, `tsx`. No secrets are needed.
 |---|---|
 | `npm run once` | one cycle, persist, write report + summary, exit 0 (non-zero on fatal error) |
 | `npm start` | loop, one cycle per `ARENA_INTERVAL_MS` (stops on SIGINT/SIGTERM after the current cycle) |
+| `npm run backtest -- …` | historical backtest / `--evolve` pre-training on GeckoTerminal candles (see above); needs internet unless `--offline` with a filled cache |
 | `npm run leaderboard` | print summary + top-10 table from `$MM_STATE_DIR/arena/summary.json` |
 | `npm run simulate -- --cycles 500 --market synthetic --seed 1` | fast offline evolution run in a fresh temp state dir with a virtual clock (fully reproducible per seed); prints summary + leaderboard. LLM disabled. Env vars still apply, e.g. `ARENA_REPRO_MULTIPLE=1.3 npm run simulate -- --cycles 3000` |
 
@@ -183,6 +293,11 @@ Performance: a cycle with 2000 agents (incl. writing a ~4 MB population file) ta
 | `ARENA_LLM_GENOMES` | 5 | genomes requested per call |
 | `ARENA_LLM_DAILY_BUDGET_USD` | 1 | hard daily cap (UTC day) |
 | `ARENA_LLM_INPUT_USD_PER_MTOK` / `ARENA_LLM_OUTPUT_USD_PER_MTOK` | 4 / 20 | cost estimate |
+| `ARENA_ADOPT_PRETRAINED` | 1 | spawn positive-OOS genomes from `arena/pretrained.json` once (live `dexscreener` arena only) |
+| `ARENA_PROMO_MIN_CYCLES` / `ARENA_PROMO_MIN_TRADES` / `ARENA_PROMO_MAX_DRAWDOWN` | 288 / 10 / 0.3 | arena evidence required for promotion |
+| `ARENA_PROMO_MIN_OOS_TRADES` / `ARENA_PROMO_MIN_OOS_RETURN` / `ARENA_PROMO_MAX_OOS_DRAWDOWN` | 5 / 0 / 0.3 | out-of-sample backtest evidence required |
+| `ARENA_PROMO_MARGIN` | 0.02 | score margin a challenger needs over the promoted strategy |
+| `ARENA_PROMO_MAX_BACKTEST_AGE_HOURS` | 168 | older backtest evidence is ignored |
 | `ARENA_VERBOSE` | 0 | `1` logs every paper trade |
 
 **About upkeep:** the default `ARENA_UPKEEP_USD=0.002` per agent per cycle models
@@ -197,6 +312,10 @@ deliberate selection pressure.
 
 - No real-money path exists; `MODE=live` exits non-zero with an explanation.
 - Kill switch / orchestrator pause → no entries, no births, exits still run.
+- Backtests (GeckoTerminal) are throttled under the public rate limit, retried with
+  backoff, cached on disk, and never run as part of `npm run once`.
+- Promotion only publishes strategy parameters; it is never derived from synthetic data
+  and cannot change the trader's mode.
 - All external calls (DexScreener) have timeout + retry with backoff and degrade
   gracefully: a failed fetch means no new entries that cycle; upkeep is still paid,
   positions keep their last mark.
@@ -229,6 +348,24 @@ Be honest about what this is:
   cycles (`npm run simulate -- --cycles 300 --seed 1`: equity $500 → ~$415, mostly
   upkeep and round-trip costs). That is the expected cost of exploration, not a bug.
 - Per-trade Sharpe is a crude, non-annualised statistic.
+- **Backtests on memecoin history are noisy.** A few pools and days give a handful of
+  trades per genome; a positive out-of-sample number is weak evidence, and it is still
+  simulated (paper fill model, no MEV/failed transactions/latency).
+- **Survivorship bias**: pool discovery lists pools that are trending/top *today*;
+  tokens that rugged and vanished before discovery are missing from the history, which
+  flatters long-only strategies. The liquidity and market-cap proxies are anchored to
+  discovery-time values (observed after the replayed period); their *dynamics* only use
+  past candles, but their level is a mild lookahead. Buy/sell counts are a candle-colour
+  proxy, not real transaction counts.
+- **"Out-of-sample" is relative.** For evolved genomes it is strict (test windows after
+  the train window). Leaderboard/population genomes were evolved live, possibly during
+  the backtested period, so their test window may not be unseen data.
+- **Out-of-sample gains are not a guarantee.** Promotion is a filter against obviously
+  bad strategies, not a forecast; the trader stays in paper mode unless an operator
+  explicitly enables live trading.
+- Test data for the history/backtest code is generated (`src/testing/gecko.ts`) or
+  hand-written fixtures (`fixtures/geckoterminal/`); the sandbox this was built in has
+  no internet, so the real GeckoTerminal endpoints were not exercised end-to-end.
 
 ## Next step: `service` species (not implemented)
 
@@ -255,6 +392,12 @@ The species framework (`src/types.ts` → `Species`, registry in
 src/
   index.ts            CLI: --once / loop
   simulate.ts         offline evolution run (temp state dir, virtual clock)
+  backtest-cli.ts     npm run backtest: data loading, walk-forward, reports, promotions
+  backtest.ts         evaluate genomes / evolve on a ReplayMarket, metrics, walk-forward splits
+  replay-market.ts    historical candles → per-step MarketSnapshots (no lookahead)
+  geckoterminal.ts    GeckoTerminal client (throttle, retry, pagination, parsing)
+  history.ts          on-disk candle cache + dataset loading
+  promotion.ts        promotion criteria, promotions.json, backtest result store
   leaderboard.ts      prints the leaderboard from summary.json
   runner.ts           wiring: config, state, market, control (kill/budget), outputs
   arena.ts            engine: lifecycle, ledger, invariant, events

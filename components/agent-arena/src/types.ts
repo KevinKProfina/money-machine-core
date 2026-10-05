@@ -48,6 +48,8 @@ export type Agent = {
   /** Capital handed to children so far (counts towards the agent's fitness). */
   givenUsd: number;
   peakBalanceUsd: number;
+  /** Max peak-to-trough drawdown of the agent's balance, 0..1 (absent in state written before it existed). */
+  maxDrawdown?: number;
   positions: Position[];
   cooldownUntil: number;
   children: number;
