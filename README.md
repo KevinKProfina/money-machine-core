@@ -52,6 +52,8 @@ Dateien in `$MM_STATE_DIR`:
 
 ## Schnellstart
 
+**Neu hier? → [docs/LOKAL-STARTEN.md](docs/LOKAL-STARTEN.md)**: Schritt-für-Schritt-Anleitung für den Start auf dem eigenen Rechner mit Docker (inkl. Telegram-Bot und Stripe-Testmodus).
+
 ```bash
 git clone https://github.com/KevinKProfina/money-machine-core.git
 cd money-machine-core
@@ -104,6 +106,7 @@ npm start                Supervisor + Daemons + Dashboard
 npm run status           aktueller Status (oder: npx tsx src/cli.ts status --json)
 npm run kill -- Grund    Not-Aus: keine neuen Positionen mehr in irgendeiner Strategie
 npm run resume           Not-Aus aufheben
+npm run test-alert       Telegram-Testnachricht senden
 npm run install-all      npm ci in allen Repos
 npm run sync-contract    Vertrag in alle Repos kopieren
 npm run doctor           Checkouts, Abhängigkeiten und Vertragskopien prüfen

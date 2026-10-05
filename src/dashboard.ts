@@ -189,6 +189,7 @@ const DASHBOARD_HTML = `<!doctype html>
 <h1>Money Machine</h1>
 <div class="muted" id="meta">lade…</div>
 <div id="banner"></div>
+<div style="margin:8px 0"><button id="killBtn">Not-Aus auslösen</button> <button id="resumeBtn">Not-Aus aufheben</button> <span class="muted">(Admin-Token im Venture-Studio-Feld eintragen)</span></div>
 <div class="grid" id="kpis"></div>
 <div class="card"><h2>Strategien</h2><table id="strategies"></table></div>
 <div class="card"><h2>Venture Studio</h2><div class="muted" id="studioMeta">keine Daten</div>
@@ -205,6 +206,18 @@ document.addEventListener('DOMContentLoaded', () => {
   const input = document.getElementById('tokenInput');
   input.value = getToken();
   input.addEventListener('change', () => { try { sessionStorage.setItem(tokenKey, input.value); } catch {} });
+});
+async function killSwitch(on) {
+  const reason = on ? prompt('Grund für den Not-Aus:', 'manuell über Dashboard') : '';
+  if (on && reason === null) return;
+  const res = await fetch(on ? '/api/kill' : '/api/resume', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + getToken() }, body: JSON.stringify({ reason }) });
+  const body = await res.json().catch(() => ({}));
+  alert(res.ok ? (on ? 'Not-Aus AKTIV — keine neuen Positionen mehr.' : 'Not-Aus aufgehoben.') : 'Fehler: ' + (body.error || res.status));
+  refresh();
+}
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('killBtn').onclick = () => killSwitch(true);
+  document.getElementById('resumeBtn').onclick = () => killSwitch(false);
 });
 async function decide(ventureId, decision) {
   const note = decision === 'rejected' ? (prompt('Grund (optional):') || '') : '';

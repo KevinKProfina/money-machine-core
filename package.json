@@ -16,6 +16,7 @@
     "doctor": "tsx src/cli.ts doctor",
     "sync-contract": "tsx src/cli.ts sync-contract",
     "backup": "tsx src/cli.ts backup",
+    "test-alert": "tsx src/cli.ts test-alert",
     "check": "tsc --noEmit",
     "test": "node --import tsx --test \"src/**/*.test.ts\""
   },

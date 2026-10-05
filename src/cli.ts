@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { loadSystemConfig, type SystemConfig } from './config.js';
 import { startDashboard } from './dashboard.js';
+import { telegramSender } from './alerts.js';
 import { createBackup, listBackups, restoreBackup } from './maintenance.js';
 import { componentProblem } from './runner.js';
 import { collectStatus, formatStatus } from './status.js';
@@ -104,6 +105,7 @@ const USAGE = `usage: mm <command>
   install          npm ci/install in core and all component repos
   sync-contract    copy contract/mm-contract.ts into every component repo
   doctor           check component checkouts, dependencies and contract copies
+  test-alert       send a Telegram test message
   backup           write a state backup now (MM_BACKUP_DIR, keeps MM_BACKUP_KEEP)
   restore <file> <dir>  unpack a backup into an empty directory`;
 
@@ -127,6 +129,13 @@ export async function main(argv: string[]) {
     case 'resume':
       console.log((await clearKillSwitch()) ? 'kill switch cleared' : 'kill switch was not active');
       return;
+    case 'test-alert': {
+      const send = telegramSender();
+      if (!send) throw new Error('TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID must both be set');
+      await send('✅ Money Machine: Testalarm — Telegram-Benachrichtigungen funktionieren.');
+      console.log('test alert sent (if nothing arrives, check the bot token, the chat id and that you messaged the bot once)');
+      return;
+    }
     case 'install':
       return cmdInstall(config);
     case 'sync-contract':
