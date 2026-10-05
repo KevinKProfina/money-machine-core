@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { loadSystemConfig, type SystemConfig } from './config.js';
 import { startDashboard } from './dashboard.js';
+import { createBackup, listBackups, restoreBackup } from './maintenance.js';
 import { componentProblem } from './runner.js';
 import { collectStatus, formatStatus } from './status.js';
 import { clearKillSwitch, runCycle, setKillSwitch, Supervisor } from './supervisor.js';
@@ -24,7 +25,13 @@ export function contractDrift(config: SystemConfig): { name: string; problem: st
 
 async function cmdStart(config: SystemConfig) {
   const supervisor = new Supervisor(config);
-  const server = await startDashboard({ host: config.dashboardHost, port: config.dashboardPort, adminToken: config.adminToken });
+  const server = await startDashboard({
+    host: config.dashboardHost,
+    port: config.dashboardPort,
+    adminToken: config.adminToken,
+    // a healthy supervisor finishes a cycle at least every interval + all step timeouts
+    staleCycleMs: 2 * (config.cycleIntervalMs + config.stepTimeoutMs * config.components.length),
+  });
   const shutdown = async (signal: string) => {
     console.log(`${signal} received, shutting down…`);
     server.close();
@@ -96,7 +103,9 @@ const USAGE = `usage: mm <command>
   resume           clear the kill switch
   install          npm ci/install in core and all component repos
   sync-contract    copy contract/mm-contract.ts into every component repo
-  doctor           check component checkouts, dependencies and contract copies`;
+  doctor           check component checkouts, dependencies and contract copies
+  backup           write a state backup now (MM_BACKUP_DIR, keeps MM_BACKUP_KEEP)
+  restore <file> <dir>  unpack a backup into an empty directory`;
 
 export async function main(argv: string[]) {
   const [command, ...rest] = argv;
@@ -124,6 +133,19 @@ export async function main(argv: string[]) {
       return cmdSyncContract(config);
     case 'doctor':
       return cmdDoctor(config);
+    case 'backup': {
+      const file = await createBackup({ stateDir: config.stateDir, backupDir: config.backupDir, keep: config.backupKeep });
+      console.log(`backup written: ${file}`);
+      console.log(`backups kept: ${(await listBackups(config.backupDir)).length}`);
+      return;
+    }
+    case 'restore': {
+      const [archive, target] = rest;
+      if (!archive || !target) throw new Error('usage: mm restore <backup.tar.gz> <empty target dir>');
+      await restoreBackup(path.resolve(archive), path.resolve(target));
+      console.log(`restored into ${target} — start with MM_STATE_DIR=${path.resolve(target)}`);
+      return;
+    }
     default:
       console.log(USAGE);
       process.exitCode = command ? 1 : 0;

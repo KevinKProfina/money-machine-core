@@ -18,6 +18,7 @@ import { readStudioSummary, type StudioSummary } from './studio.js';
 
 export type SupervisorState = {
   startedAt?: string;
+  lastBackup?: { at: string; file?: string; error?: string };
   cycles: number;
   lastCycle?: { startedAt: string; finishedAt: string; ok: boolean; steps: StepResult[] };
   daemons: DaemonState[];

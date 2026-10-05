@@ -27,6 +27,11 @@ export type SystemConfig = {
   dashboardPort: number;
   dashboardHost: string;
   adminToken?: string;
+  backupDir: string;
+  backupKeep: number;
+  backupIntervalMs: number;
+  logMaxBytes: number;
+  eventsMaxBytes: number;
   components: (ComponentConfig & { absDir: string; script: string })[];
 };
 
@@ -71,6 +76,11 @@ export function loadSystemConfig(configPath = path.join(coreDir, 'system.config.
     dashboardPort: positiveNumber('MM_DASHBOARD_PORT', 8780),
     dashboardHost: process.env.MM_DASHBOARD_HOST ?? '127.0.0.1',
     adminToken: process.env.MM_ADMIN_TOKEN || undefined,
+    backupDir: path.resolve(coreDir, process.env.MM_BACKUP_DIR ?? 'backups'),
+    backupKeep: positiveNumber('MM_BACKUP_KEEP', 14),
+    backupIntervalMs: positiveNumber('MM_BACKUP_INTERVAL_MS', 24 * 3_600_000),
+    logMaxBytes: positiveNumber('MM_LOG_MAX_BYTES', 5 * 1024 * 1024),
+    eventsMaxBytes: positiveNumber('MM_EVENTS_MAX_BYTES', 10 * 1024 * 1024),
     components,
   };
 }

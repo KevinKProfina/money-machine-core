@@ -12,7 +12,8 @@ Type=simple
 User=mm
 WorkingDirectory=/opt/mm/money-machine-core
 EnvironmentFile=/opt/mm/money-machine-core/deploy/mm.env
-Environment=MM_STATE_DIR=/var/lib/money-machine
+Environment=MM_STATE_DIR=/var/lib/money-machine/state
+Environment=MM_BACKUP_DIR=/var/lib/money-machine/backups
 ExecStart=/usr/bin/node --import tsx src/cli.ts start
 Restart=always
 RestartSec=10

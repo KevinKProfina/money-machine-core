@@ -10,7 +10,8 @@
       "name": "liquidation-hunter",
       "dir": "liquidation-hunter",
       "type": "cycle",
-      "phase": 1
+      "phase": 1,
+      "enabled": false
     },
     {
       "name": "agent-arena",

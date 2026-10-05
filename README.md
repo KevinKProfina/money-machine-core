@@ -78,6 +78,13 @@ Dashboard und Marketplace-API sind nur auf `127.0.0.1` erreichbar. Der Zustand l
 
 **Alarme:** Mit `TELEGRAM_BOT_TOKEN` und `TELEGRAM_CHAT_ID` meldet der Supervisor ausfallende/wiederhergestellte Komponenten, Not-Aus an/aus und jede Strategie im Live-Modus — jeweils einmal pro Zustandswechsel, nicht jeden Zyklus.
 
+## Betrieb
+
+- **Sicherungen:** Der Supervisor sichert den Zustand einmal täglich als `tar.gz` nach `MM_BACKUP_DIR` (Standard `backups/`, im Container das Volume `mm-backups`) und behält `MM_BACKUP_KEEP` Stück. Manuell: `npm run backup`. Wiederherstellen: `npx tsx src/cli.ts restore <datei> <leeres-verzeichnis>` und `MM_STATE_DIR` darauf zeigen lassen. Caches (`arena/history`) werden nicht gesichert.
+- **Logs:** `logs/<komponente>.log` rotiert ab `MM_LOG_MAX_BYTES` (3 alte Dateien bleiben). `events.jsonl` wird ab `MM_EVENTS_MAX_BYTES` auf die neuere Hälfte gekürzt.
+- **Health:** `GET /health` liefert 503, wenn länger kein Zyklus fertig wurde; der Docker-`HEALTHCHECK` nutzt das, externe Uptime-Monitore können es auch.
+- **Liquidation Hunter** ist in `system.config.json` deaktiviert (`"enabled": false`), bis er eine echte Datenquelle hat — er lief nur auf simulierten Positionen.
+
 ## Venture Studio: Freigaben
 
 Alles bis „bereit zum Start“ läuft automatisch. Fertige Produkte erscheinen im Dashboard unter **Venture Studio** mit Vorschau (Verkaufsseite + Produkt). Admin-Token eintragen, **Freigeben** oder **Ablehnen** klicken; das Studio veröffentlicht im nächsten Zyklus. Einstellen von Flops (keine Verkäufe nach `STUDIO_EVAL_DAYS`) passiert ohne Rückfrage.

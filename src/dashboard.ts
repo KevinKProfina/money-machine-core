@@ -6,7 +6,13 @@ import { collectStatus } from './status.js';
 import { appendStudioDecision, resolvePreviewFile } from './studio.js';
 import { clearKillSwitch, setKillSwitch } from './supervisor.js';
 
-export type DashboardOptions = { host: string; port: number; adminToken?: string };
+export type DashboardOptions = {
+  host: string;
+  port: number;
+  adminToken?: string;
+  /** /health answers 503 when the last finished cycle is older than this (supervisor hung or dead). */
+  staleCycleMs?: number;
+};
 
 function tokenMatches(header: string | undefined, token: string | undefined): boolean {
   if (!token || !header?.startsWith('Bearer ')) return false;
@@ -68,7 +74,11 @@ export function createDashboardServer(options: DashboardOptions): http.Server {
         return;
       }
       if (req.method === 'GET' && url.pathname === '/health') {
-        sendJson(res, 200, { ok: true });
+        const status = await collectStatus();
+        const finished = status.supervisor?.lastCycle?.finishedAt;
+        const ageMs = finished ? Date.now() - Date.parse(finished) : undefined;
+        const stale = options.staleCycleMs !== undefined && ageMs !== undefined && ageMs > options.staleCycleMs;
+        sendJson(res, stale ? 503 : 200, { ok: !stale, lastCycleFinishedAt: finished ?? null, lastCycleAgeMs: ageMs ?? null });
         return;
       }
       if (req.method === 'GET' && url.pathname === '/studio-preview') {

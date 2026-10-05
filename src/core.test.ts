@@ -51,6 +51,7 @@ function fakeConfig(): SystemConfig {
   return {
     coreDir: '/nope', root: '/nope', stateDir: process.env.MM_STATE_DIR!, logsDir: '/nope/logs',
     cycleIntervalMs: 1000, stepTimeoutMs: 1000, dashboardPort: 0, dashboardHost: '127.0.0.1',
+    backupDir: '/nope/backups', backupKeep: 3, backupIntervalMs: 1000, logMaxBytes: 1000, eventsMaxBytes: 1000,
     components: [comp('orchestrator', 4), comp('trader', 1), comp('revenue', 2), comp('market', 0, 'daemon'), comp('hunter', 1), comp('allocator', 3)],
   };
 }
@@ -196,5 +197,55 @@ test('studio: decisions need the admin token, previews are sandboxed and confine
     assert.equal((await fetch(`${base}/studio-preview?path=${encodeURIComponent('/etc/passwd')}`)).status, 404);
   } finally {
     server.close();
+  }
+});
+
+test('maintenance: log rotation, event log compaction, backup + restore with retention', async () => {
+  const { rotateIfLarge, compactEventLog, createBackup, listBackups, restoreBackup } = await import('./maintenance.js');
+  const dir = process.env.MM_STATE_DIR!;
+  const log = path.join(dir, 'x.log');
+  fs.writeFileSync(log, 'a'.repeat(50));
+  rotateIfLarge(log, 100);
+  assert.ok(fs.existsSync(log) && !fs.existsSync(`${log}.1`));
+  fs.writeFileSync(log, 'b'.repeat(200));
+  rotateIfLarge(log, 100);
+  assert.ok(!fs.existsSync(log) && fs.readFileSync(`${log}.1`, 'utf8').startsWith('b'));
+
+  const lines = Array.from({ length: 400 }, (_, i) => JSON.stringify({ ts: 't', source: 's', level: 'info', type: 'x', message: `m${i}` }));
+  fs.writeFileSync(statePaths.events(), lines.join('\n') + '\n');
+  assert.equal(await compactEventLog(5_000), true);
+  const kept = fs.readFileSync(statePaths.events(), 'utf8').trim().split('\n');
+  assert.ok(kept.length < 400 && kept.length > 10);
+  assert.equal(JSON.parse(kept.at(-1)!).message, 'm399');
+  for (const l of kept) JSON.parse(l); // every kept line is intact
+
+  await writeJsonAtomic(statePaths.strategy('a'), report('a'));
+  fs.mkdirSync(path.join(dir, 'arena', 'history'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'arena', 'history', 'big.json'), '{}');
+  const backups = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-bk-'));
+  for (let i = 0; i < 4; i++) await createBackup({ stateDir: dir, backupDir: backups, keep: 2, now: new Date(Date.UTC(2026, 0, 1 + i)) });
+  const kept2 = await listBackups(backups);
+  assert.equal(kept2.length, 2);
+  assert.match(kept2[1]!, /2026-01-04/);
+  const target = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-restore-'));
+  await restoreBackup(path.join(backups, kept2[1]!), target);
+  assert.ok(fs.existsSync(path.join(target, 'strategies', 'a.json')));
+  assert.ok(!fs.existsSync(path.join(target, 'arena', 'history', 'big.json')), 'caches are excluded');
+  await assert.rejects(restoreBackup(path.join(backups, kept2[1]!), target), /not empty/);
+});
+
+test('health turns 503 when the last cycle is stale', async () => {
+  await writeJsonAtomic(path.join(process.env.MM_STATE_DIR!, 'core', 'supervisor.json'), {
+    cycles: 1, daemons: [], lastCycle: { startedAt: 'x', finishedAt: new Date(Date.now() - 60_000).toISOString(), ok: true, steps: [] },
+  });
+  for (const [stale, code] of [[10_000, 503], [120_000, 200]] as const) {
+    const server = createDashboardServer({ host: '127.0.0.1', port: 0, staleCycleMs: stale });
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+    try {
+      const res = await fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}/health`);
+      assert.equal(res.status, code);
+    } finally {
+      server.close();
+    }
   }
 });

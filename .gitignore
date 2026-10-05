@@ -6,3 +6,4 @@ dist/
 .mm-state/
 logs/
 deploy/mm.env
+backups/

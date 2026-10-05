@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { SystemConfig } from './config.js';
+import { rotateIfLarge } from './maintenance.js';
 
 type Component = SystemConfig['components'][number];
 
@@ -27,7 +28,9 @@ export function componentProblem(component: Component): string | undefined {
 
 function openLog(config: SystemConfig, name: string): fs.WriteStream {
   fs.mkdirSync(config.logsDir, { recursive: true });
-  return fs.createWriteStream(path.join(config.logsDir, `${name}.log`), { flags: 'a' });
+  const file = path.join(config.logsDir, `${name}.log`);
+  rotateIfLarge(file, config.logMaxBytes);
+  return fs.createWriteStream(file, { flags: 'a' });
 }
 
 function spawnNpm(component: Component, args: string[], config: SystemConfig): ChildProcess {

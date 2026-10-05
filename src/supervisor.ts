@@ -3,6 +3,7 @@ import path from 'node:path';
 import { emitEvent, readJsonSafe, statePaths, writeJsonAtomic } from '../contract/mm-contract.js';
 import { cyclePhases, type SystemConfig } from './config.js';
 import { diffAlerts, telegramSender, type AlertSender, type AlertState } from './alerts.js';
+import { compactEventLog, createBackup } from './maintenance.js';
 import { Daemon, runStep, type StepResult } from './runner.js';
 import { collectStatus, supervisorStatePath, type SupervisorState } from './status.js';
 
@@ -109,11 +110,33 @@ export class Supervisor {
         state.daemons = this.daemons.map((d) => ({ ...d.state }));
       });
       await this.alert(result.steps);
+      await this.maintain();
       console.log(`cycle finished: ${result.ok ? 'ok' : 'with failures'}; next in ${this.config.cycleIntervalMs} ms`);
     });
     this.cycleInFlight = cycle.catch((err) => console.error(`cycle crashed: ${(err as Error).message}`));
     await this.cycleInFlight;
     if (this.running) this.timer = setTimeout(() => void this.tick(), this.config.cycleIntervalMs);
+  }
+
+  /** Event-log compaction every cycle; a state backup when the last one is older than the interval. */
+  private async maintain(): Promise<void> {
+    await compactEventLog(this.config.eventsMaxBytes).catch(() => undefined);
+    const state = await readJsonSafe<SupervisorState>(supervisorStatePath(), { cycles: 0, daemons: [] });
+    const last = state.lastBackup?.at ? Date.parse(state.lastBackup.at) : 0;
+    if (Date.now() - last < this.config.backupIntervalMs) return;
+    let lastBackup: NonNullable<SupervisorState['lastBackup']>;
+    try {
+      const file = await createBackup({ stateDir: this.config.stateDir, backupDir: this.config.backupDir, keep: this.config.backupKeep });
+      lastBackup = { at: new Date().toISOString(), file };
+      console.log(`state backup written: ${file}`);
+    } catch (err) {
+      lastBackup = { at: new Date().toISOString(), error: (err as Error).message };
+      await emitEvent({ source: 'money-machine-core', level: 'error', type: 'backup.failed', message: `State backup failed: ${(err as Error).message}` });
+      if (this.sendAlert) await this.sendAlert(`⚠️ Money Machine: state backup failed: ${(err as Error).message}`);
+    }
+    await updateSupervisorState((s) => {
+      s.lastBackup = lastBackup;
+    });
   }
 
   daemonStates() {
