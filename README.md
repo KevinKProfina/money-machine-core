@@ -24,6 +24,7 @@ Integrationsschicht des Money-Machine-Systems: gemeinsamer Datenvertrag, Supervi
 | `liquidation-hunter` | Strategie: Liquidationen von Lending-Positionen (derzeit simulierte Datenquelle) |
 | `revenue-engine` | Erfasst und aggregiert alle Umsatzströme (Trading, KI-Services, Affiliate, digitale Produkte, SaaS) |
 | `agent-marketplace` | Marktplatz, auf dem Agenten Services anbieten/kaufen (Escrow, Reputation, Revenue-Share) |
+| `components/venture-studio` (in diesem Repo) | Findet selbst Einnahmeideen (bevorzugt solche, die das System komplett allein umsetzen kann), baut digitale Produkte + Verkaufsseiten, verkauft über Stripe, misst und stellt Flops ein. **Live geht nur, was du im Dashboard freigibst.** |
 | `components/agent-arena` (in diesem Repo) | Evolutionäre Agenten-Arena: viele kleine Agenten mit eigenem Budget, Verlierer sterben, Gewinner vermehren sich mit mutierter Strategie (Paper-Modus) |
 | `capital-allocator` | Bewertet Strategien und schlägt eine Kapitalverteilung vor |
 | `orchestrator` | Governance: Health-Gates, Reserve, Drawdown-Not-Aus, Reinvestition, verbindliche Allokation |
@@ -76,6 +77,16 @@ Dashboard und Marketplace-API sind nur auf `127.0.0.1` erreichbar. Der Zustand l
 **Ohne Docker:** `deploy/money-machine.service` (systemd) — Anleitung steht in der Datei.
 
 **Alarme:** Mit `TELEGRAM_BOT_TOKEN` und `TELEGRAM_CHAT_ID` meldet der Supervisor ausfallende/wiederhergestellte Komponenten, Not-Aus an/aus und jede Strategie im Live-Modus — jeweils einmal pro Zustandswechsel, nicht jeden Zyklus.
+
+## Venture Studio: Freigaben
+
+Alles bis „bereit zum Start“ läuft automatisch. Fertige Produkte erscheinen im Dashboard unter **Venture Studio** mit Vorschau (Verkaufsseite + Produkt). Admin-Token eintragen, **Freigeben** oder **Ablehnen** klicken; das Studio veröffentlicht im nächsten Zyklus. Einstellen von Flops (keine Verkäufe nach `STUDIO_EVAL_DAYS`) passiert ohne Rückfrage.
+
+Damit wirklich verkauft werden kann, braucht das Studio (siehe `components/venture-studio/.env.example`):
+- `STRIPE_API_KEY` (Testschlüssel reicht zum Ausprobieren; Live-Schlüssel nur zusammen mit `MODE=live` + `LIVE_TRADING_CONFIRM`)
+- `STUDIO_OPERATOR_NAME`, `STUDIO_OPERATOR_ADDRESS`, `STUDIO_OPERATOR_EMAIL` (Impressum — ohne wird nichts veröffentlicht)
+- `STUDIO_SITE_URL` und `STUDIO_DEPLOY_CMD` (z. B. `npx wrangler pages deploy . --project-name=meinshop`)
+- `ANTHROPIC_API_KEY` (sonst nur eingebaute Beispielideen)
 
 ## CLI
 

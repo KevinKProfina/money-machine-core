@@ -234,7 +234,9 @@ async function refresh() {
       ? 'Kanal ' + (st.channel || '–') + ' · ' + Object.entries(st.counts || {}).map(([k, v]) => k + ' ' + v).join(', ')
         + ((st.blockers || []).length ? ' · Blocker: ' + st.blockers.join('; ') : '')
       : 'keine Daten';
-    const preview = (p) => p ? '<a href="/studio-preview?path=' + encodeURIComponent(p) + '" target="_blank" rel="noopener">Vorschau</a>' : '–';
+    // previewPath is the venture's preview directory (landing.html + product.html)
+    const pv = (p, file, label) => '<a href="/studio-preview?path=' + encodeURIComponent(p + '/' + file) + '" target="_blank" rel="noopener">' + label + '</a>';
+    const preview = (p) => p ? pv(p, 'landing.html', 'Verkaufsseite') + ' · ' + pv(p, 'product.html', 'Produkt') : '–';
     table('approvals', ['Wartet auf Freigabe', 'Preis', 'Seit', 'Vorschau', ''],
       ((st && st.pendingApprovals) || []).map((p) => [esc(p.title), usd(p.price), esc(new Date(p.requestedAt).toLocaleString('de-DE')), preview(p.previewPath),
         '<button data-id="' + esc(p.ventureId) + '" data-d="approved">Freigeben</button> <button data-id="' + esc(p.ventureId) + '" data-d="rejected">Ablehnen</button>']));

@@ -19,6 +19,12 @@
       "phase": 1
     },
     {
+      "name": "venture-studio",
+      "dir": "./components/venture-studio",
+      "type": "cycle",
+      "phase": 1
+    },
+    {
       "name": "revenue-engine",
       "dir": "revenue-engine",
       "type": "cycle",

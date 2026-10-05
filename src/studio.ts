@@ -16,7 +16,8 @@ export type StudioSummary = {
   channel?: string;
   deployed?: unknown;
   counts?: Record<string, number>;
-  pendingApprovals?: { ventureId: string; title: string; price: number; requestedAt: string; previewPath?: string }[];
+  /** previewPath is a directory containing landing.html and product.html */
+  pendingApprovals?: { ventureId: string; title: string; price: number; currency?: string; requestedAt: string; previewPath?: string }[];
   live?: { title: string; slug: string; url?: string; price: number; sales: number; revenue: number; daysLive: number }[];
   parkedOpportunities?: { title: string; autonomyScore: number; humanSteps?: string[] }[];
   blockers?: string[];

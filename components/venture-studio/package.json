@@ -1,0 +1,32 @@
+{
+  "name": "venture-studio",
+  "version": "0.1.0",
+  "description": "Autonomous venture studio for the Money Machine system: finds, scores and builds digital products; launch only after owner approval",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts start",
+    "once": "tsx src/index.ts --once",
+    "status": "tsx src/index.ts status",
+    "approve": "tsx src/index.ts approve",
+    "reject": "tsx src/index.ts reject",
+    "simulate": "tsx src/simulate.ts",
+    "check": "tsc --noEmit",
+    "test": "node --import tsx --test \"src/**/*.test.ts\""
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.131.0",
+    "dotenv": "^16.6.1",
+    "marked": "^18.0.14",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3"
+  }
+}
