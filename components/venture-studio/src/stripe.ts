@@ -3,6 +3,36 @@ import { fetchJson, type FetchLike } from './http.js';
 export type Listing = { productId: string; priceId: string; paymentLinkId: string; paymentLinkUrl: string };
 export type SalesCount = { count: number; revenueCents: number };
 
+/**
+ * Checkout sessions of one payment link by status. Every visit of the Stripe checkout page
+ * creates a session, so `started` ≈ "checkout started"; `paid` (complete + paid) = sales.
+ */
+export type CheckoutCounts = { started: number; open: number; expired: number; complete: number; paid: number; revenueCents: number };
+
+export const emptyCheckouts = (): CheckoutCounts => ({ started: 0, open: 0, expired: 0, complete: 0, paid: 0, revenueCents: 0 });
+
+type SessionRow = { id: string; status?: string | null; amount_total?: number | null; payment_status?: string };
+
+const isPaid = (s: SessionRow) => s.payment_status === undefined || s.payment_status === 'paid' || s.payment_status === 'no_payment_required';
+
+/** Pure: tally checkout sessions (all statuses) into funnel counts. */
+export function tallyCheckouts(sessions: SessionRow[]): CheckoutCounts {
+  const c = emptyCheckouts();
+  for (const s of sessions) {
+    c.started++;
+    if (s.status === 'open') c.open++;
+    else if (s.status === 'expired') c.expired++;
+    else if (s.status === 'complete') {
+      c.complete++;
+      if (isPaid(s)) {
+        c.paid++;
+        c.revenueCents += s.amount_total ?? 0;
+      }
+    }
+  }
+  return c;
+}
+
 export type ListingInput = {
   ventureId: string;
   name: string;
@@ -23,6 +53,8 @@ export interface SalesChannel {
   readonly simulated: boolean;
   createListing(input: ListingInput): Promise<Listing>;
   countSales(paymentLinkId: string): Promise<SalesCount>;
+  /** All checkout sessions of the link by status (started vs completed). */
+  countCheckouts(paymentLinkId: string): Promise<CheckoutCounts>;
   deactivate(paymentLinkId: string): Promise<void>;
 }
 
@@ -124,6 +156,22 @@ export class StripeChannel implements SalesChannel {
     return { count, revenueCents };
   }
 
+  async countCheckouts(paymentLinkId: string): Promise<CheckoutCounts> {
+    const all: SessionRow[] = [];
+    let startingAfter: string | undefined;
+    for (let page = 0; page < 100; page++) {
+      const res = await this.get<{ data: SessionRow[]; has_more: boolean }>('/v1/checkout/sessions', {
+        payment_link: paymentLinkId,
+        limit: 100,
+        starting_after: startingAfter,
+      });
+      all.push(...res.data);
+      if (!res.has_more || res.data.length === 0) break;
+      startingAfter = res.data[res.data.length - 1]!.id;
+    }
+    return tallyCheckouts(all);
+  }
+
   async deactivate(paymentLinkId: string): Promise<void> {
     await this.post(`/v1/payment_links/${encodeURIComponent(paymentLinkId)}`, { active: false });
   }
@@ -138,6 +186,9 @@ export class NoChannel implements SalesChannel {
   }
   async countSales(): Promise<SalesCount> {
     return { count: 0, revenueCents: 0 };
+  }
+  async countCheckouts(): Promise<CheckoutCounts> {
+    return emptyCheckouts();
   }
   async deactivate(): Promise<void> {
     // nothing to deactivate

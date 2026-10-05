@@ -89,6 +89,38 @@ export const WITHDRAWAL_NOTICE_EN =
 
 export type LandingMode = 'preview' | 'live' | 'coming-soon' | 'discontinued';
 
+/** Where beacons go: `${endpoint}` is the collector's `/e` URL, `site` the collector site id. */
+export type BeaconConfig = { endpoint: string; site: string };
+export type BeaconEvent = 'pageview' | 'download';
+
+/** JSON literal that is safe inside an inline <script> (no `</script>`, no U+2028/2029). */
+function jsLiteral(v: string): string {
+  return JSON.stringify(v).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
+}
+
+/**
+ * Tiny inline, cookieless beacon (< 1 KB, no third-party script). Sends one event on load
+ * (`pageview`, or `download` on the download page) and `buy_click` when the buy button is
+ * clicked. `path` is fixed by the studio (never location.pathname), so secret download
+ * tokens never leave the page. Honors Do-Not-Track / Global Privacy Control by sending nothing.
+ */
+export function beaconScript(b: BeaconConfig, pagePath: string, event: BeaconEvent): string {
+  const js =
+    `(function(){var n=navigator;if(n.doNotTrack=="1"||n.globalPrivacyControl)return;` +
+    `var u=${jsLiteral(b.endpoint)},s=${jsLiteral(b.site)},p=${jsLiteral(pagePath)};` +
+    `function b(e){try{var d=JSON.stringify({site:s,path:p,event:e,ref:e=="pageview"&&document.referrer||void 0});` +
+    `n.sendBeacon?n.sendBeacon(u,d):fetch(u,{method:"POST",body:d,keepalive:!0,mode:"no-cors",headers:{"Content-Type":"text/plain"}})}catch(x){}}` +
+    `b(${jsLiteral(event)});var a=document.querySelector("a.buy[href]");a&&a.addEventListener("click",function(){b("buy_click")})})();`;
+  return `<script>${js}</script>`;
+}
+
+/** Adds the beacon to a finished HTML document (download page), right before </body>. */
+export function injectBeacon(html: string, b: BeaconConfig, pagePath: string, event: BeaconEvent): string {
+  const tag = beaconScript(b, pagePath, event);
+  const i = html.toLowerCase().lastIndexOf('</body>');
+  return i === -1 ? `${html}\n${tag}\n` : `${html.slice(0, i)}${tag}\n${html.slice(i)}`;
+}
+
 export type LandingCtx = {
   mode: LandingMode;
   buyUrl?: string;
@@ -96,6 +128,8 @@ export type LandingCtx = {
   operator?: Operator;
   currency: string;
   priceNote: string;
+  /** Analytics beacon (public pages only; never on previews). */
+  beacon?: BeaconConfig;
 };
 
 export function renderLanding(v: Pick<Venture, 'slug' | 'title' | 'idea'>, copy: LandingCopy, ctx: LandingCtx): string {
@@ -157,7 +191,7 @@ ${faq}
 <p>${WITHDRAWAL_NOTICE_DE}${lang === 'en' ? ` ${WITHDRAWAL_NOTICE_EN}` : ''}</p>
 </div>
 </main>
-${footer(lang, ctx.operator, '../')}`;
+${footer(lang, ctx.operator, '../')}${ctx.beacon && ctx.mode !== 'preview' ? `\n${beaconScript(ctx.beacon, `/${v.slug}/`, 'pageview')}` : ''}`;
   return page({ lang, title: `${v.title}`, head, body, noindex: ctx.mode === 'preview' || ctx.mode === 'discontinued' });
 }
 
@@ -193,7 +227,25 @@ ${footer('de', op, '')}`;
   return page({ lang: 'de', title: 'Impressum', body });
 }
 
-export function renderDatenschutz(op: Operator, paymentProvider: 'stripe' | 'none'): string {
+export type AnalyticsNotice = { collectorHost: string; retentionDays: number };
+
+export function analyticsSection(a: AnalyticsNotice | undefined): string {
+  if (!a) {
+    return `<h2>Cookies, Tracking, Analyse</h2>
+<p>Diese Website setzt keine Cookies und verwendet keine Analyse- oder Tracking-Werkzeuge. Es werden keine externen Schriftarten oder Skripte geladen.</p>`;
+  }
+  const host = escapeHtml(a.collectorHost);
+  return `<h2>Cookies</h2>
+<p>Diese Website setzt keine Cookies und speichert keine Informationen auf deinem Endgerät (kein Local Storage, kein Fingerprinting). Es werden keine externen Schriftarten oder Skripte Dritter geladen.</p>
+<h2>Reichweitenmessung (cookielos, ohne Dritte)</h2>
+<p>Um zu verstehen, ob die Produktseiten gefunden und genutzt werden, sendet ein kleines Skript dieser Website beim Aufruf einer Seite, beim Klick auf den Kauf-Button und beim Aufruf der Download-Seite eine Meldung an unseren eigenen Statistik-Dienst unter <code>${host}</code>. Die Meldung enthält nur: die Seite (Pfad ohne Parameter), die Art des Ereignisses (Seitenaufruf, Kauf-Klick, Download) und – nur beim Seitenaufruf – die Domain der verweisenden Website (z. B. „google.com“, ohne Pfad oder Suchbegriffe).</p>
+<p>Technisch bedingt erhält der Statistik-Dienst dabei deine IP-Adresse und die Browser-Kennung (User-Agent). Diese werden ausschließlich im Arbeitsspeicher und nur kurzzeitig verarbeitet, um (1) automatisierte Zugriffe (Bots) auszufiltern, (2) Missbrauch durch eine Begrenzung der Anfragen je IP-Adresse pro Minute zu verhindern und (3) die Zahl der verschiedenen Besucher eines Tages zu schätzen. Für (3) wird aus IP-Adresse, Browser-Kennung und Website ein Prüfwert (Hash) mit einem zufälligen Schlüssel gebildet, der nur im Arbeitsspeicher existiert und täglich verworfen und neu erzeugt wird; ein Wiedererkennen über Tage hinweg ist dadurch nicht möglich. IP-Adressen, Browser-Kennungen und Prüfwerte werden nicht gespeichert und nicht protokolliert.</p>
+<p>Gespeichert werden ausschließlich zusammengefasste Tageszahlen je Seite (z. B. „42 Seitenaufrufe, 3 Kauf-Klicks“) und die Anzahl der Aufrufe je verweisender Domain. Es werden keine Nutzerprofile erstellt, keine Daten an Dritte weitergegeben und keine websiteübergreifende Verfolgung durchgeführt. Die Tageszahlen werden nach ${a.retentionDays} Tagen gelöscht.</p>
+<p>Wenn dein Browser „Do Not Track“ oder „Global Privacy Control“ signalisiert, sendet das Skript keine Meldung. Du kannst die Messung außerdem jederzeit verhindern, indem du JavaScript oder Anfragen an <code>${host}</code> blockierst.</p>
+<p>Rechtsgrundlage ist unser berechtigtes Interesse an einer datensparsamen Reichweitenmessung zur Verbesserung des Angebots (Art. 6 Abs. 1 lit. f DSGVO). Du kannst der Verarbeitung aus Gründen, die sich aus deiner besonderen Situation ergeben, widersprechen (Art. 21 DSGVO).</p>`;
+}
+
+export function renderDatenschutz(op: Operator, paymentProvider: 'stripe' | 'none', analytics?: AnalyticsNotice): string {
   const stripe =
     paymentProvider === 'stripe'
       ? `<h2>Zahlungsabwicklung</h2><p>Käufe werden über Stripe (Stripe Payments Europe, Ltd., Dublin, Irland) abgewickelt. Beim Klick auf „Kaufen“ wirst du zu Stripe weitergeleitet; dort gelten die Datenschutzhinweise von Stripe. Wir erhalten von Stripe die für die Abwicklung nötigen Daten (z. B. Name, E-Mail, Betrag). Rechtsgrundlage: Art. 6 Abs. 1 lit. b DSGVO.</p>`
@@ -204,8 +256,7 @@ export function renderDatenschutz(op: Operator, paymentProvider: 'stripe' | 'non
 <p>${escapeHtml(op.name)}, ${escapeHtml(op.address)}, E-Mail: ${escapeHtml(op.email)}</p>
 <h2>Hosting und Server-Logs</h2>
 <p>Diese Website besteht aus statischen Dateien. Der Hosting-Anbieter kann technisch notwendige Zugriffsdaten (IP-Adresse, Zeitpunkt, abgerufene Datei, User-Agent) in Server-Logs verarbeiten. Rechtsgrundlage: Art. 6 Abs. 1 lit. f DSGVO (sicherer Betrieb).</p>
-<h2>Cookies, Tracking, Analyse</h2>
-<p>Diese Website setzt keine Cookies und verwendet keine Analyse- oder Tracking-Werkzeuge. Es werden keine externen Schriftarten oder Skripte geladen.</p>
+${analyticsSection(analytics)}
 ${stripe}
 <h2>Deine Rechte</h2>
 <p>Du hast das Recht auf Auskunft, Berichtigung, Löschung, Einschränkung der Verarbeitung, Datenübertragbarkeit und Widerspruch sowie das Recht auf Beschwerde bei einer Datenschutz-Aufsichtsbehörde. Kontakt: ${escapeHtml(op.email)}.</p>
@@ -215,7 +266,7 @@ ${footer('de', op, '')}`;
   return page({ lang: 'de', title: 'Datenschutzerklärung', body });
 }
 
-export function renderCatalog(items: Array<{ title: string; slug: string; description: string; price: string }>, operator?: Operator, siteUrl?: string): string {
+export function renderCatalog(items: Array<{ title: string; slug: string; description: string; price: string }>, operator?: Operator, siteUrl?: string, beacon?: BeaconConfig): string {
   const cards = items.length
     ? items.map((i) => `<div class="card"><h2><a href="${escapeHtml(i.slug)}/">${escapeHtml(i.title)}</a></h2><p>${escapeHtml(i.description)}</p><p class="price">${escapeHtml(i.price)}</p></div>`).join('\n')
     : '<p>Derzeit keine Produkte. / No products yet.</p>';
@@ -224,7 +275,7 @@ export function renderCatalog(items: Array<{ title: string; slug: string; descri
 <main>
 ${cards}
 </main>
-${footer('de', operator, '')}`;
+${footer('de', operator, '')}${beacon ? `\n${beaconScript(beacon, '/', 'pageview')}` : ''}`;
   return page({ lang: 'de', title: 'Produkte', head, body });
 }
 

@@ -84,6 +84,16 @@ export class FakeStripe {
     this.sessions.push({ id: this.id('cs'), payment_link: linkId, status: opts.status ?? 'complete', payment_status: opts.paid === false ? 'unpaid' : 'paid', amount_total: price.unit_amount });
   }
 
+  /** Simulate a checkout that was started but not paid (expired, or still open). */
+  abandon(linkId: string, status: 'open' | 'expired' = 'expired'): void {
+    this.sell(linkId, { status, paid: false });
+  }
+
+  /** Completed + paid sessions (= sales). */
+  paidSessions(): Session[] {
+    return this.sessions.filter((s) => s.status === 'complete' && s.payment_status === 'paid');
+  }
+
   /** Stripe-mutating requests (anything that creates or changes objects). */
   mutations(): RecordedRequest[] {
     return this.requests.filter((r) => r.method !== 'GET');

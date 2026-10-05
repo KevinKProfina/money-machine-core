@@ -8,10 +8,37 @@ Traffic comes only from organic search (SEO). Every launch is approved by the ow
 Content rules (always):
 - ${POLICY_RULES_TEXT}`;
 
-export type HistoryItem = { title: string; category: string; state: string; reason?: string; sales?: number };
+export type HistoryItem = {
+  title: string;
+  category: string;
+  state: string;
+  reason?: string;
+  sales?: number;
+  price?: number;
+  /** Funnel diagnosis of a live/past venture (no-traffic | no-interest | checkout-friction | converting). */
+  diagnosis?: string;
+  /** One-line funnel numbers (visits, clicks, checkouts, sales). */
+  funnel?: string;
+};
+
+export function historyLine(h: HistoryItem): string {
+  return (
+    `- [${h.state}] ${h.title} (${h.category}${h.price !== undefined ? `, ${h.price} EUR` : ''})` +
+    `${h.sales !== undefined ? `, sales ${h.sales}` : ''}` +
+    `${h.diagnosis ? `, diagnosis ${h.diagnosis}` : ''}` +
+    `${h.funnel ? ` [${h.funnel}]` : ''}` +
+    `${h.reason ? ` — ${h.reason}` : ''}`
+  );
+}
+
+export const DIAGNOSIS_GUIDE = `Funnel diagnoses in the history (measured with cookieless page analytics + Stripe checkout sessions):
+- no-traffic: almost nobody found the landing page. A traffic/SEO problem, NOT necessarily a bad product → prefer keywords with clear search demand and weak competition, very specific long-tail niches.
+- no-interest: people came but rarely clicked "buy" → the angle, audience fit or price did not resonate; do not repeat the same angle.
+- checkout-friction: people clicked buy but did not finish paying → price too high for the trust level, or unclear deliverable.
+- converting: it sold; similar audiences/formats are promising.`;
 
 export function ideasPrompt(n: number, history: HistoryItem[], existingSlugs: string[]): string {
-  const hist = history.length ? history.map((h) => `- [${h.state}] ${h.title} (${h.category})${h.sales !== undefined ? `, sales ${h.sales}` : ''}${h.reason ? ` — ${h.reason}` : ''}`).join('\n') : '- (no history yet)';
+  const hist = history.length ? history.map(historyLine).join('\n') : '- (no history yet)';
   return `Propose ${n} NEW income ideas for the studio.
 
 Prefer ideas the studio can execute end-to-end by itself:
@@ -28,6 +55,8 @@ keywords are realistic search phrases; niche, specific audiences beat broad ones
 
 Venture history (learn from it: repeat what sold, avoid what was killed, blocked or rejected and why):
 ${hist}
+
+${DIAGNOSIS_GUIDE}
 
 Slugs already used (do not reuse): ${existingSlugs.join(', ') || '(none)'}
 
@@ -115,10 +144,29 @@ export function followUpPrompt(parent: Venture, history: HistoryItem[], n: numbe
   return `This product sold well: ${parent.title} (${parent.idea.category}, ${parent.idea.price} EUR, ${parent.sales?.count ?? 0} sales).
 Propose ${n} follow-up ideas: a variant for a neighbouring audience, a bundle/extension, or a price test – each must be a NEW product that the studio can build alone.
 Recent history:
-${history.map((h) => `- [${h.state}] ${h.title}`).join('\n') || '- none'}
+${history.map(historyLine).join('\n') || '- none'}
 
 Parent idea:
 ${JSON.stringify(parent.idea, null, 2)}
 
 Use the same JSON format as idea proposals: {"ideas":[...]} with full autonomy assessment and new unique slugs.`;
+}
+
+/** No-interest kill → ONE new idea for the same problem with a different angle and/or price. */
+export function reanglePrompt(v: Venture, funnelSummary: string, history: HistoryItem[]): string {
+  return `This product was discontinued: ${v.title} (${v.idea.category}, ${v.idea.price} EUR).
+Diagnosis: no-interest — visitors found the page but almost nobody clicked "buy" (${funnelSummary}).
+Propose 1 NEW product idea for the same underlying problem with a clearly DIFFERENT angle: e.g. a narrower audience, a different format
+(checklist vs. workbook vs. micro-tool), a more concrete promise of the deliverable, and/or a different price point (often lower).
+It must not be a copy of the old product. It must be buildable by the studio alone and follow the content rules.
+
+${DIAGNOSIS_GUIDE}
+
+Recent history:
+${history.map(historyLine).join('\n') || '- none'}
+
+Old idea:
+${JSON.stringify(v.idea, null, 2)}
+
+Use the same JSON format as idea proposals: {"ideas":[...]} with exactly one idea, a full autonomy assessment and a new unique slug.`;
 }

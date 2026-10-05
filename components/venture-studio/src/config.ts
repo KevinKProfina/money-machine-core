@@ -36,7 +36,33 @@ export type StudioConfig = {
     inputUsdPerMTok: number;
     outputUsdPerMTok: number;
   };
+  analytics: AnalyticsConfig;
   notes: string[];
+};
+
+export type DiagnosisThresholds = {
+  /** Landing-page visits in the evaluation window below this → `no-traffic`. */
+  minVisits: number;
+  /** buy clicks / visits below this → `no-interest`. */
+  minClickRate: number;
+  /** At least this many buy clicks / started checkouts without (enough) sales → `checkout-friction`. */
+  minFrictionClicks: number;
+  /** completed / started checkouts below this (with ≥ minFrictionClicks started) → `checkout-friction`. */
+  minCheckoutCompletion: number;
+};
+
+export type AnalyticsConfig = {
+  /** Public base URL of the analytics-collector (beacons POST to `${url}/e`). Unset → no beacon. */
+  url?: string;
+  /** Site id sent with beacons and used for the collector's files (default: hostname of STUDIO_SITE_URL). */
+  site?: string;
+  /** Bearer token for `GET {url}/stats` (only needed when the collector does not share MM_STATE_DIR). */
+  readToken?: string;
+  /** Mirrors the collector's ANALYTICS_RETENTION_DAYS (stated in the Datenschutz page). */
+  retentionDays: number;
+  thresholds: DiagnosisThresholds;
+  /** `checkout-friction` ventures without sales stay live up to evalDays × this factor before a kill. */
+  frictionGraceFactor: number;
 };
 
 export class ConfigError extends Error {
@@ -112,6 +138,23 @@ export function readConfig(env: Env = process.env): StudioConfig {
     }
   }
 
+  let analyticsUrl: string | undefined;
+  const analyticsRaw = str(env, 'STUDIO_ANALYTICS_URL');
+  if (analyticsRaw) {
+    let u: URL;
+    try {
+      u = new URL(analyticsRaw);
+    } catch {
+      throw new ConfigError(`STUDIO_ANALYTICS_URL=${analyticsRaw} is not a valid URL`);
+    }
+    if (u.protocol !== 'https:' && u.protocol !== 'http:') throw new ConfigError('STUDIO_ANALYTICS_URL must be http(s)');
+    if (u.search || u.hash) throw new ConfigError('STUDIO_ANALYTICS_URL must not contain a query or fragment');
+    analyticsUrl = u.toString().replace(/\/+$/, '');
+  }
+  const analyticsSite = (str(env, 'STUDIO_ANALYTICS_SITE') ?? (siteUrl ? new URL(siteUrl).hostname : undefined))?.toLowerCase();
+  if (analyticsSite && !/^[a-z0-9](?:[a-z0-9.-]{0,98}[a-z0-9])?$/.test(analyticsSite)) throw new ConfigError(`STUDIO_ANALYTICS_SITE=${analyticsSite} must be a lowercase hostname-like id`);
+  if (analyticsUrl && !analyticsSite) notes.push('STUDIO_ANALYTICS_URL set but no site id (set STUDIO_SITE_URL or STUDIO_ANALYTICS_SITE): no beacon is embedded');
+
   return {
     intervalMs: num(env, 'STUDIO_INTERVAL_MS', 3_600_000, 1_000, 7 * 86_400_000, true),
     maxActive: num(env, 'STUDIO_MAX_ACTIVE', 5, 0, 1000, true),
@@ -137,6 +180,19 @@ export function readConfig(env: Env = process.env): StudioConfig {
       dailyBudgetUsd: num(env, 'STUDIO_LLM_DAILY_BUDGET_USD', 3, 0, 1e6),
       inputUsdPerMTok: num(env, 'STUDIO_LLM_INPUT_USD_PER_MTOK', 4, 0, 1e4),
       outputUsdPerMTok: num(env, 'STUDIO_LLM_OUTPUT_USD_PER_MTOK', 20, 0, 1e4),
+    },
+    analytics: {
+      url: analyticsUrl,
+      site: analyticsSite,
+      readToken: str(env, 'ANALYTICS_READ_TOKEN'),
+      retentionDays: num(env, 'ANALYTICS_RETENTION_DAYS', 400, 1, 3650, true),
+      thresholds: {
+        minVisits: num(env, 'STUDIO_DIAG_MIN_VISITS', 50, 0, 1e9, true),
+        minClickRate: num(env, 'STUDIO_DIAG_MIN_CLICK_RATE', 0.02, 0, 1),
+        minFrictionClicks: num(env, 'STUDIO_DIAG_MIN_FRICTION_CLICKS', 3, 1, 1e6, true),
+        minCheckoutCompletion: num(env, 'STUDIO_DIAG_MIN_CHECKOUT_COMPLETION', 0.25, 0, 1),
+      },
+      frictionGraceFactor: num(env, 'STUDIO_FRICTION_GRACE_FACTOR', 2, 1, 10),
     },
     notes,
   };

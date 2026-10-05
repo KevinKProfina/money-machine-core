@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { Diagnosis, Funnel } from './funnel.js';
 
 export const CATEGORIES = ['digital-product', 'micro-tool', 'content-site', 'service-listing'] as const;
 export type Category = (typeof CATEGORIES)[number];
@@ -91,7 +92,7 @@ export type Venture = {
   humanSteps: string[];
   parentId?: string;
   generation: number;
-  followUpKind?: 'variant' | 'bundle' | 'price-test';
+  followUpKind?: 'variant' | 'bundle' | 'price-test' | 'reangle';
   /** Seed catalog key (offline content). */
   seedKey?: string;
   state: VentureState;
@@ -120,6 +121,12 @@ export type Venture = {
     salesSince?: string;
   };
   sales?: { count: number; revenueCents: number; currency: string; simulated: boolean; lastCheckedAt: string; error?: string };
+  /** Latest funnel measurement + diagnosis (live/winner ventures; kept after a kill for the history). */
+  funnel?: Funnel & { diagnosis: Diagnosis; diagnosisReason: string; measuredAt: string };
+  /** First time the venture was flagged with checkout friction (summary + one event). */
+  frictionFlaggedAt?: string;
+  /** A re-angle follow-up is owed (no-interest kill) but could not be created yet (kill switch / LLM budget). */
+  reanglePending?: boolean;
   blocked?: { kind: BlockKind; reasons: string[] };
   rejectedReason?: string;
   rejectedBy?: 'scoring' | 'owner';

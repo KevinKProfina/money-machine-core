@@ -98,6 +98,7 @@ export class FakeLlm implements LlmClient {
 
   private answer(req: LlmRequest): string {
     switch (req.task) {
+      case 'reangle':
       case 'ideas': {
         const n = Number(/Propose (\d+)/.exec(req.prompt)?.[1] ?? 1);
         return JSON.stringify({ ideas: Array.from({ length: n }, (_, i) => this.idea(i)) });

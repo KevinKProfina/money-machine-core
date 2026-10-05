@@ -69,22 +69,97 @@ States: `idea → queued → review → ready → approved → live → winner |
      `STUDIO_CURRENCY`), `POST /v1/payment_links` (`line_items[0][price]`,
      `line_items[0][quantity]=1`, `after_completion[type]=redirect`,
      `after_completion[redirect][url]=<download url>`, withdrawal waiver as
-     `custom_text[submit][message]`). Sales: `GET /v1/checkout/sessions?payment_link=…&status=complete`
-     (paginated, only `paid` sessions). Kill: `POST /v1/payment_links/<id>` `active=false`.
+     `custom_text[submit][message]`). Sales + funnel: `GET /v1/checkout/sessions?payment_link=…`
+     (all statuses, paginated; sales = `complete` + `paid`). Kill: `POST /v1/payment_links/<id>` `active=false`.
      Test keys (`sk_test_`/`rk_test_`) → all sales flagged **simulated**.
    - `none`: landing page shows "coming soon"; nothing can be bought or become a
      winner; the summary says revenue needs `STRIPE_API_KEY`. If a key is added
      later, live ventures get their payment link on the next cycle.
-6. **Measure & evolve.** Every cycle counts sales per live venture. After
-   `STUDIO_EVAL_DAYS` purchasable: 0 sales → `killed` (link deactivated, landing
-   "discontinued" + `noindex`, removed from catalog and sitemap, redeploy; the
-   download page stays so earlier buyers keep access). ≥ `STUDIO_WINNER_SALES` →
-   `winner`, which spawns up to 2 follow-up ideas (variant / bundle / price test,
-   `parentId`, `generation`) that go through scoring, build, review **and the gate**
-   again. Ventures with 1…(winner−1) sales stay live.
+6. **Measure & evolve.** Every cycle measures the funnel of each live venture (see
+   [Funnel measurement & diagnosis](#funnel-measurement--diagnosis)) and decides
+   with the diagnosis. After `STUDIO_EVAL_DAYS` purchasable:
+   - 0 sales → `killed` (link deactivated, landing "discontinued" + `noindex`,
+     removed from catalog and sitemap, redeploy; the download page stays so earlier
+     buyers keep access). The kill reason records the diagnosis:
+     `no-traffic` → *"traffic problem, not necessarily a product problem"*;
+     `no-interest` → additionally **one re-angle follow-up** (different angle and/or
+     price, `followUpKind: 'reangle'`; never for a re-angle itself);
+     `checkout-friction` → **not** killed at the normal window: flagged in the
+     summary (`attention`) and an event, kept live up to `STUDIO_EVAL_DAYS ×
+     STUDIO_FRICTION_GRACE_FACTOR` days, then killed if still 0 sales.
+   - ≥ `STUDIO_WINNER_SALES` → `winner`, which spawns up to 2 follow-up ideas
+     (variant / bundle / price test, `parentId`, `generation`).
+   - Ventures with 1…(winner−1) sales stay live.
+
+   **All follow-ups (winner and re-angle) go through scoring, build, review and the
+   owner gate again.** Diagnoses and funnel numbers are part of the venture history
+   that is fed into the ideation prompt, together with a short guide on what each
+   diagnosis means, so the scout can learn (e.g. "no-traffic" ≠ bad product).
 
 Per-venture sales are used only for studio decisions and are **not** sent to
 `revenue-engine` (its own Stripe adapter already counts the money).
+
+## Funnel measurement & diagnosis
+
+```
+landing visits ──▶ buy clicks ──▶ checkouts started ──▶ sales (paid)
+(analytics beacon)  (beacon)      (Stripe sessions,      (Stripe, complete+paid)
+                                   any status)
+```
+
+- **Visits / unique visitors / buy clicks / downloads** come from
+  [`components/analytics-collector`](../analytics-collector) (cookieless, aggregates
+  only). Source selection: the collector's daily files when a **running** collector
+  shares this `MM_STATE_DIR` (its heartbeat `$MM_STATE_DIR/analytics/collector.json`
+  exists; if the heartbeat is older than 36 h the data counts as unavailable instead
+  of "zero visits"), otherwise
+  `GET {STUDIO_ANALYTICS_URL}/stats?site=…&from=…&to=…` with
+  `Authorization: Bearer $ANALYTICS_READ_TOKEN` (timeout + retry), otherwise none.
+  Analytics is used only when `STUDIO_ANALYTICS_URL` is set (without a beacon on the
+  pages, zero visits would be meaningless).
+- **Checkouts:** one paginated `GET /v1/checkout/sessions?payment_link=…` (all
+  statuses) per live venture per cycle: `started` = all sessions, plus
+  `open` / `expired` / `complete`; sales = complete **and** paid.
+- **Window:** from the day the venture became purchasable (or was published), but
+  never before the day the beacon was first deployed, so days without a beacon are
+  not counted as "zero traffic".
+- **Diagnosis** (`diagnose()` in `src/funnel.ts`, pure and unit-tested; thresholds
+  via env):
+
+  | diagnosis | rule (sales = 0 unless stated) |
+  |---|---|
+  | `converting` | ≥ 1 sale (but: ≥ `STUDIO_DIAG_MIN_FRICTION_CLICKS` checkouts started and completion < `STUDIO_DIAG_MIN_CHECKOUT_COMPLETION` → `checkout-friction`) |
+  | `no-traffic` | visits < `STUDIO_DIAG_MIN_VISITS` (50) and fewer than 3 buy clicks/checkouts |
+  | `no-interest` | enough visits, click rate < `STUDIO_DIAG_MIN_CLICK_RATE` (2 %) — wins over a few abandoned checkouts — or too few clicks to speak of friction |
+  | `checkout-friction` | ≥ `STUDIO_DIAG_MIN_FRICTION_CLICKS` (3) buy clicks / started checkouts, none completed |
+  | `unknown` | no analytics data and no Stripe signal (falls back to the plain "no sales" rule) |
+
+- If analytics is configured but unreachable, an evaluation decision waits up to
+  2 extra days for data instead of deciding blind.
+- **summary.json** gains `live[].funnel` (visits, uniqueVisitors, buyClicks,
+  downloads, checkoutsStarted/Open/Expired/Completed, sales, clickRate,
+  checkoutCompletionRate, conversionRate, trafficSource, since, diagnosis,
+  diagnosisReason), `live[].diagnosis`, `traffic` (site-wide `last7d` / `last30d`
+  totals incl. bots filtered and top referrer hosts, source, error) and `attention`
+  (e.g. checkout friction). `npm run status` prints them.
+
+### The beacon
+
+When `STUDIO_ANALYTICS_URL` is set, landing pages (live / coming soon /
+discontinued), the catalog and digital-product download pages get a ≤ 1 KB inline
+script (no third-party script, no cookies, no storage): `pageview` on load (with
+`document.referrer`), `buy_click` on the buy button, `download` on the download page.
+It posts `{site, path, event, ref?}` via `navigator.sendBeacon` to
+`{STUDIO_ANALYTICS_URL}/e`. The path is fixed by the studio (`/<slug>/`), so the
+secret download token is never sent. Browsers with Do-Not-Track / Global Privacy
+Control send nothing. Previews never contain the beacon. **Micro-tool** download
+pages stay beacon-free because the tool promises "no network access" (their
+downloads are not counted). Enabling/changing the analytics URL triggers a site
+rebuild + redeploy, and the generated **Datenschutz** page then describes the
+collector truthfully (what is sent, transient IP/UA processing, daily salt, no
+storage of IP/UA, aggregates only, retention `ANALYTICS_RETENTION_DAYS`, legal
+basis Art. 6 (1) f DSGVO, DNT/GPC). Without analytics it keeps saying that no
+analytics is used.
 
 ## How it fits into the system
 
@@ -93,7 +168,9 @@ A cycle component run by the `money-machine-core` supervisor (`--once`). It read
 like the kill switch), writes only below `$MM_STATE_DIR/studio/`, and appends events
 to `events.jsonl` via `emitEvent` (`studio.ideas`, `studio.ready_for_approval`,
 `studio.approved`, `studio.rejected`, `studio.publish`, `studio.kill`,
-`studio.winner`, `studio.blocked`, `studio.deploy`, `studio.deploy_failed`). It does
+`studio.winner`, `studio.blocked`, `studio.deploy`, `studio.deploy_failed`,
+`studio.funnel_alert`). With analytics it reads `$MM_STATE_DIR/analytics/<site>/*.json`
+(written by `analytics-collector`) or the collector's `/stats` endpoint. It does
 not consume capital and writes no `strategies/*.json`.
 
 Files in `$MM_STATE_DIR/studio/`:
@@ -189,7 +266,7 @@ npm run simulate -- --days 60 --seed 1 --auto-approve
 | `npm start` | loop every `STUDIO_INTERVAL_MS` (default 1 h); single-writer lock per state dir |
 | `npm run status` | print `summary.json` |
 | `npm run approve -- <id>` / `npm run reject -- <id> [note]` | append a decision line (pending requests only) |
-| `npm run simulate -- --days 60 --seed 1 [--auto-approve] [--cycles-per-day 4]` | offline funnel in a temp dir: fake Claude, fake Stripe (test mode), fake deploy, virtual clock, seeded low conversion |
+| `npm run simulate -- --days 60 --seed 1 [--auto-approve] [--cycles-per-day 4]` | offline funnel in a temp dir: fake Claude, fake Stripe (test mode), fake deploy, fake analytics collector (shared state dir), virtual clock, seeded per-product visits / click rate / checkout completion; prints per-venture funnel + diagnosis |
 | `npm run check` / `npm test` | typecheck / offline tests |
 
 `MODE` (`paper` default, `dry-run`, `live`) only matters for a **live** Stripe key:
@@ -222,6 +299,15 @@ npm run simulate -- --days 60 --seed 1 --auto-approve
 | `ANTHROPIC_API_KEY` | – | Claude; unset → seed catalog, regex-only review |
 | `STUDIO_LLM_DAILY_BUDGET_USD` | 3 | hard daily LLM cap |
 | `STUDIO_LLM_INPUT_USD_PER_MTOK` / `_OUTPUT_` | 4 / 20 | cost model |
+| `STUDIO_ANALYTICS_URL` | – | public collector base URL; enables the beacon + Datenschutz section + funnel traffic |
+| `STUDIO_ANALYTICS_SITE` | hostname of `STUDIO_SITE_URL` | site id for beacons / collector files |
+| `ANALYTICS_READ_TOKEN` | – | bearer token for `/stats` (only when the collector does not share `MM_STATE_DIR`) |
+| `ANALYTICS_RETENTION_DAYS` | 400 | stated in the Datenschutz page (keep equal to the collector) |
+| `STUDIO_DIAG_MIN_VISITS` | 50 | below → `no-traffic` |
+| `STUDIO_DIAG_MIN_CLICK_RATE` | 0.02 | below → `no-interest` |
+| `STUDIO_DIAG_MIN_FRICTION_CLICKS` | 3 | clicks/checkouts needed for `checkout-friction` |
+| `STUDIO_DIAG_MIN_CHECKOUT_COMPLETION` | 0.25 | completion below → `checkout-friction` (even with sales) |
+| `STUDIO_FRICTION_GRACE_FACTOR` | 2 | friction ventures stay live up to eval × factor |
 
 ## Safety / guardrails (always on)
 
@@ -238,6 +324,8 @@ npm run simulate -- --days 60 --seed 1 --auto-approve
   withdrawal notice are enforced on every landing page.
 - **No outreach**: no e-mail, social posting or scraping. Traffic only via SEO
   (sitemap, meta, JSON-LD).
+- **Privacy**: no cookies, no third-party scripts. The optional analytics beacon
+  talks only to your own collector, which stores aggregates only (see its README).
 - **Kill switch / orchestrator pause**: no ideation, build or publish; consuming
   decisions, measuring and killing continue.
 - Micro-tools must be one HTML file without any network access (checked by regex).
@@ -275,3 +363,13 @@ npm run simulate -- --days 60 --seed 1 --auto-approve
 - Stripe test keys produce simulated sales only. Nothing here fabricates sales: sales
   are counted only from Stripe checkout sessions.
 - Single studio process per state dir (lock file `studio/.lock`).
+- **Analytics numbers are approximate.** Unique visitors are a sum of daily
+  estimates (a returning visitor counts once per day; a collector restart mid-day
+  can double-count), ad/tracking blockers and DNT/GPC hide visits, and bots that
+  look like browsers slip through. Diagnoses on small numbers (a few dozen visits)
+  are noisy; thresholds are heuristics, not statistics. `no-traffic` is mostly an SEO
+  timing problem on a new domain.
+- The re-angle follow-up of an **offline seed** venture can only change price and
+  title (same seed content); real re-angles need Claude.
+- Stripe's checkout-session list is read in full each cycle per live venture
+  (100 per page); very busy links mean more API calls.

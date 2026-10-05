@@ -1,20 +1,22 @@
 import crypto from 'node:crypto';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
+import { chooseTrafficSource, type TrafficSource } from './analytics.js';
 import { addRequest, applyDecisions, readApprovals, type ApprovalsFile } from './approvals.js';
 import { COMPONENT_NAME, type StudioConfig } from './config.js';
 import { runDeployCmd, type Deployer } from './deploy.js';
 import { renderLanding, renderMarkdown, renderProductPage, WITHDRAWAL_NOTICE_DE } from './html.js';
 import type { FetchLike } from './http.js';
+import { computeFunnel, diagnose, funnelLine, ventureTraffic, type DayAggregate, type TrafficSourceId } from './funnel.js';
 import { createAnthropicClient, Llm, utcDay, type LlmClient } from './llm.js';
 import { emitEvent, isKillSwitchActive, readStrategyBudget, writeJsonAtomic, type MMEvent } from './mm-contract.js';
 import { checkMicroTool, combineScore, computeAutonomy, ideaHardFilter, scanContent } from './policy.js';
-import { criticPrompt, followUpPrompt, ideasPrompt, landingPrompt, productPrompt, reviewPrompt, revisePrompt, SYSTEM, type HistoryItem } from './prompts.js';
+import { criticPrompt, followUpPrompt, ideasPrompt, landingPrompt, productPrompt, reanglePrompt, reviewPrompt, revisePrompt, SYSTEM, type HistoryItem } from './prompts.js';
 import { SEEDS, seedByKey } from './seeds.js';
-import { writeSite } from './site.js';
+import { beaconSignature, publishedVentures, writeSite } from './site.js';
 import { loadState, saveState, studioPaths, type StudioState } from './state.js';
-import { NoChannel, StripeChannel, type SalesChannel } from './stripe.js';
-import { buildSummary, type StudioSummary } from './summary.js';
+import { emptyCheckouts, NoChannel, StripeChannel, type CheckoutCounts, type SalesChannel } from './stripe.js';
+import { buildSummary, type StudioSummary, type TrafficSnapshot } from './summary.js';
 import {
   BUILDABLE,
   CriticSchema,
@@ -47,6 +49,8 @@ export type StudioDeps = {
   emit?: EmitFn;
   log?: (m: string) => void;
   control?: () => Promise<Control>;
+  /** Override the analytics source (tests); null → no analytics. Default: chooseTrafficSource(cfg). */
+  traffic?: TrafficSource | null;
 };
 
 export async function readControl(): Promise<Control> {
@@ -110,6 +114,9 @@ export class Studio {
   private readonly controlFn: () => Promise<Control>;
   private cycleNotes: string[] = [];
   private lastControl: Control = { halted: false };
+  private readonly trafficSource?: TrafficSource;
+  /** Analytics daily aggregates loaded once per cycle. */
+  traffic: TrafficSnapshot = { source: 'none' };
 
   private constructor(
     readonly cfg: StudioConfig,
@@ -125,6 +132,7 @@ export class Studio {
     else if (deps.llm) client = deps.llm;
     else if (cfg.llm.apiKey) client = createAnthropicClient(cfg.llm.apiKey);
     this.llm = new Llm(client, cfg.llm, state.llm, this.now);
+    this.trafficSource = deps.traffic === null ? undefined : (deps.traffic ?? chooseTrafficSource(cfg, { fetchImpl: deps.fetchImpl, now: this.now }));
     this.channel = deps.channel ?? (cfg.stripe.apiKey ? new StripeChannel(cfg.stripe.apiKey, { fetchImpl: deps.fetchImpl }) : new NoChannel());
     this.deploy =
       deps.deploy ??
@@ -172,7 +180,10 @@ export class Studio {
       category: v.idea.category,
       state: v.state === 'rejected' && v.rejectedBy === 'owner' ? 'rejected-by-owner' : v.state,
       reason: v.killedReason ?? v.rejectedReason ?? v.blocked?.reasons.join('; ') ?? (v.state === 'parked' ? `needs human: ${v.humanSteps.join(', ')}` : undefined),
+      price: v.idea.price,
       ...(v.sales ? { sales: v.sales.count } : {}),
+      ...(v.funnel && v.funnel.diagnosis !== 'unknown' ? { diagnosis: v.funnel.diagnosis } : {}),
+      ...(v.funnel ? { funnel: funnelLine(v.funnel) } : {}),
     }));
   }
 
@@ -224,6 +235,10 @@ export class Studio {
     const applied = await applyDecisions();
     const approvals = await readApprovals();
 
+    // 1b. analytics: rebuild the site when the beacon config changed; load traffic once per cycle
+    if ((this.state.site.beacon?.signature ?? '') !== beaconSignature(this.cfg) && publishedVentures(this.state.ventures).length > 0) this.state.site.dirty = true;
+    await this.loadTraffic();
+
     // 2. advance each venture by at most one stage
     for (const v of [...this.state.ventures]) {
       try {
@@ -247,7 +262,7 @@ export class Studio {
 
   async persist(): Promise<StudioSummary> {
     await saveState(this.state);
-    const summary = buildSummary(this.state, this.cfg, this.channel, this.now(), await readApprovals(), this.lastControl, this.cycleNotes, this.llm.enabled);
+    const summary = buildSummary(this.state, this.cfg, this.channel, this.now(), await readApprovals(), this.lastControl, this.cycleNotes, this.llm.enabled, this.traffic);
     await writeJsonAtomic(studioPaths.summary(), summary);
     return summary;
   }
@@ -283,6 +298,7 @@ export class Studio {
         return;
       case 'killed':
         await this.ensureDeactivated(v);
+        if (v.reanglePending && !control.halted) await this.spawnReangle(v);
         return;
       default:
         return;
@@ -626,6 +642,8 @@ export class Studio {
     }
     await writeSite(this.state.ventures, this.cfg, studioPaths.site(), this.now(), this.channel.id);
     this.state.site.lastWrittenAt = this.iso();
+    const sig = beaconSignature(this.cfg);
+    if ((this.state.site.beacon?.signature ?? '') !== sig || !this.state.site.beacon) this.state.site.beacon = { signature: sig, ...(sig ? { since: utcDay(this.now()) } : {}) };
     const result = await this.deploy(studioPaths.site());
     this.state.site.lastDeploy = result;
     if (result.skipped) {
@@ -653,21 +671,33 @@ export class Studio {
       }
       return;
     }
+    let checkouts: CheckoutCounts = emptyCheckouts();
     if (pub.stripe?.paymentLinkId) {
       try {
-        const s = await this.channel.countSales(pub.stripe.paymentLinkId);
-        v.sales = { count: s.count, revenueCents: s.revenueCents, currency: this.cfg.currency, simulated: this.channel.simulated, lastCheckedAt: this.iso() };
+        // one paginated list of ALL sessions: started vs completed, and the paid ones are the sales
+        checkouts = await this.channel.countCheckouts(pub.stripe.paymentLinkId);
+        v.sales = { count: checkouts.paid, revenueCents: checkouts.revenueCents, currency: this.cfg.currency, simulated: this.channel.simulated, lastCheckedAt: this.iso() };
       } catch (error) {
         v.sales = { ...(v.sales ?? { count: 0, revenueCents: 0, currency: this.cfg.currency, simulated: this.channel.simulated }), lastCheckedAt: this.iso(), error: (error as Error).message };
         return; // never decide on missing data
       }
     }
+    await this.updateFunnel(v, checkouts);
     if (!pub.salesSince) return; // not purchasable yet → no evaluation
     const daysLive = (this.now().getTime() - Date.parse(pub.salesSince)) / DAY_MS;
     const sales = v.sales?.count ?? 0;
     if (daysLive >= this.cfg.evalDays) {
       if (sales === 0) {
-        await this.kill(v, `no sales in ${this.cfg.evalDays} days`);
+        // analytics configured but unreachable: wait up to 2 days for data before deciding
+        if (this.traffic.error && daysLive < this.cfg.evalDays + 2) return;
+        const diag = v.funnel?.diagnosis;
+        // people try to buy but do not finish: keep it live longer (flagged in the summary)
+        if (diag === 'checkout-friction' && daysLive < this.cfg.evalDays * this.cfg.analytics.frictionGraceFactor) return;
+        await this.kill(v, this.killReason(v, daysLive));
+        if (diag === 'no-interest' && v.followUpKind !== 'reangle') {
+          v.reanglePending = true;
+          if (!control.halted) await this.spawnReangle(v);
+        }
         return;
       }
       if (v.state === 'live' && sales >= this.cfg.winnerSales && this.channel.id === 'stripe') {
@@ -676,6 +706,89 @@ export class Studio {
       }
     }
     if (v.state === 'winner' && !v.followUpsSpawned && !control.halted) await this.spawnFollowUps(v);
+  }
+
+  /** Loads the collector's daily aggregates for the window the live ventures need. */
+  private async loadTraffic(): Promise<void> {
+    const src = this.trafficSource;
+    const site = this.cfg.analytics.site;
+    if (!src || !site) {
+      this.traffic = { source: 'none' };
+      return;
+    }
+    const nowMs = this.now().getTime();
+    const today = utcDay(this.now());
+    const starts = this.state.ventures
+      .filter((v) => (v.state === 'live' || v.state === 'winner') && v.publish?.publishedAt)
+      .map((v) => utcDay(new Date(Date.parse(v.publish!.salesSince ?? v.publish!.publishedAt!))));
+    let from = [utcDay(new Date(nowMs - 29 * DAY_MS)), ...starts].sort()[0]!;
+    const oldest = utcDay(new Date(nowMs - (this.cfg.analytics.retentionDays - 1) * DAY_MS));
+    if (from < oldest) from = oldest;
+    try {
+      const days: DayAggregate[] = await src.load(site, from, today);
+      this.traffic = { source: src.id, site, fromDay: from, days };
+    } catch (error) {
+      const message = (error as Error).message;
+      this.traffic = { source: src.id, site, fromDay: from, error: message };
+      this.cycleNotes.push(`analytics unavailable (${src.id}): ${message}`);
+    }
+  }
+
+  /** Funnel + diagnosis for one live venture (pure math in funnel.ts). */
+  private async updateFunnel(v: Venture, checkouts: CheckoutCounts): Promise<void> {
+    const pub = v.publish!;
+    let since = utcDay(new Date(Date.parse(pub.salesSince ?? pub.publishedAt ?? v.updatedAt)));
+    const beaconSince = this.state.site.beacon?.signature ? this.state.site.beacon.since : undefined;
+    if (beaconSince && beaconSince > since) since = beaconSince; // only count days the beacon was on the page
+    const days = this.traffic.days;
+    const source: TrafficSourceId = days ? this.traffic.source : 'none';
+    const f = computeFunnel(days ? ventureTraffic(days, v.slug, since) : undefined, checkouts, source, since);
+    const d = diagnose(f, this.cfg.analytics.thresholds);
+    v.funnel = { ...f, diagnosis: d.diagnosis, diagnosisReason: d.reason, measuredAt: this.iso() };
+    if (d.diagnosis === 'checkout-friction' && !v.frictionFlaggedAt) {
+      v.frictionFlaggedAt = this.iso();
+      await this.event('warn', 'studio.funnel_alert', `${v.title}: checkout friction — ${d.reason}`, { ventureId: v.id, diagnosis: d.diagnosis, funnel: f });
+    }
+  }
+
+  private killReason(v: Venture, daysLive: number): string {
+    const f = v.funnel;
+    const t = this.cfg.analytics.thresholds;
+    const base = `no sales in ${f?.diagnosis === 'checkout-friction' ? Math.floor(daysLive) : this.cfg.evalDays} days`;
+    switch (f?.diagnosis) {
+      case 'no-traffic':
+        return `${base} — traffic problem, not necessarily a product problem (${f.visits} landing visits < ${t.minVisits})`;
+      case 'no-interest':
+        return `${base} — no interest: ${f.diagnosisReason}${v.followUpKind !== 'reangle' ? '; re-angle follow-up proposed' : ''}`;
+      case 'checkout-friction':
+        return `${base} — checkout friction: ${f.diagnosisReason}`;
+      default:
+        return base;
+    }
+  }
+
+  /** No-interest kill → one follow-up idea with a different angle/price. It goes through scoring, build, review and the owner gate. */
+  private async spawnReangle(v: Venture): Promise<void> {
+    const extra: Partial<Venture> = { parentId: v.id, generation: v.generation + 1, followUpKind: 'reangle' };
+    let created: Venture | undefined;
+    if (v.source === 'claude' && this.llm.enabled) {
+      const r = await this.llm.callJson(
+        { task: 'reangle', system: SYSTEM, prompt: reanglePrompt(v, v.funnel ? funnelLine(v.funnel) : 'no funnel data', this.history()), maxTokens: 6000, effort: 'medium' },
+        IdeasResponseSchema,
+      );
+      if (r.status === 'budget') return; // stays pending
+      const idea = r.status === 'ok' ? r.data.ideas[0] : undefined;
+      if (idea) created = this.addIdea(idea, 'claude', extra);
+    } else {
+      // offline: same seed content, lower price (a price test is the only angle the seed catalog can change)
+      const idea = structuredClone(v.idea);
+      idea.price = Math.max(3, Math.round(idea.price * 0.7));
+      idea.slug = `${v.slug}-r`;
+      idea.title = `${v.title} (${v.idea.language === 'de' ? 'neuer Ansatz' : 'new angle'})`;
+      created = this.addIdea(idea, v.source, { ...extra, ...(v.seedKey ? { seedKey: v.seedKey } : {}) });
+    }
+    delete v.reanglePending;
+    if (created) await this.event('info', 'studio.ideas', `re-angle follow-up for ${v.title} (no-interest): ${created.title}`, { parentId: v.id, ideas: [{ id: created.id, title: created.title, kind: 'reangle' }] });
   }
 
   async kill(v: Venture, reason: string): Promise<void> {

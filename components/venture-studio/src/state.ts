@@ -28,7 +28,13 @@ export type StudioState = {
   ventures: Venture[];
   ideation: { day: string; count: number; seedCursor: number; lastNote?: string };
   llm: LlmLedger;
-  site: { dirty: boolean; lastWrittenAt?: string; lastDeploy?: DeployResult };
+  site: {
+    dirty: boolean;
+    lastWrittenAt?: string;
+    lastDeploy?: DeployResult;
+    /** Beacon embedded in the written site ('' = none) and since when (traffic is only counted from then on). */
+    beacon?: { signature: string; since?: string };
+  };
 };
 
 export function emptyState(now: Date): StudioState {

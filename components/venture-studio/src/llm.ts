@@ -4,7 +4,7 @@ import type { z } from 'zod';
 
 export const MODEL = 'claude-opus-5-5';
 
-export type LlmTask = 'ideas' | 'critic' | 'product' | 'landing' | 'review' | 'revise' | 'followups';
+export type LlmTask = 'ideas' | 'critic' | 'product' | 'landing' | 'review' | 'revise' | 'followups' | 'reangle';
 
 export type LlmRequest = {
   task: LlmTask;
