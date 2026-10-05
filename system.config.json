@@ -2,13 +2,13 @@
   "components": [
     {
       "name": "solana-trading-agent",
-      "dir": "solana-trading-agent",
+      "dir": "./components/solana-trading-agent",
       "type": "cycle",
       "phase": 1
     },
     {
       "name": "liquidation-hunter",
-      "dir": "liquidation-hunter",
+      "dir": "./components/liquidation-hunter",
       "type": "cycle",
       "phase": 1,
       "enabled": false
@@ -27,25 +27,25 @@
     },
     {
       "name": "revenue-engine",
-      "dir": "revenue-engine",
+      "dir": "./components/revenue-engine",
       "type": "cycle",
       "phase": 2
     },
     {
       "name": "capital-allocator",
-      "dir": "capital-allocator",
+      "dir": "./components/capital-allocator",
       "type": "cycle",
       "phase": 3
     },
     {
       "name": "orchestrator",
-      "dir": "orchestrator",
+      "dir": "./components/orchestrator",
       "type": "cycle",
       "phase": 4
     },
     {
       "name": "agent-marketplace",
-      "dir": "agent-marketplace",
+      "dir": "./components/agent-marketplace",
       "type": "daemon",
       "script": "start"
     },

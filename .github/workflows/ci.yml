@@ -3,7 +3,7 @@ on:
   push:
   pull_request:
 jobs:
-  test:
+  core:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -14,54 +14,50 @@ jobs:
       - run: npm ci
       - run: npm run check
       - run: npm test
-  agent-arena:
+  component:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        component:
+          - agent-arena
+          - agent-marketplace
+          - analytics-collector
+          - capital-allocator
+          - liquidation-hunter
+          - orchestrator
+          - revenue-engine
+          - solana-trading-agent
+          - venture-studio
     defaults:
       run:
-        working-directory: components/agent-arena
+        working-directory: components/${{ matrix.component }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: components/agent-arena/package-lock.json
+          cache-dependency-path: components/${{ matrix.component }}/package-lock.json
       - run: npm ci
       - run: npm run check
       - run: npm test
       - name: contract copy matches canonical contract
         run: cmp src/mm-contract.ts ../../contract/mm-contract.ts
-  venture-studio:
+  system:
+    # one full system cycle with all components (no secrets, synthetic arena market)
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: components/venture-studio
+    needs: [core, component]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: components/venture-studio/package-lock.json
       - run: npm ci
-      - run: npm run check
-      - run: npm test
-      - name: contract copy matches canonical contract
-        run: cmp src/mm-contract.ts ../../contract/mm-contract.ts
-  analytics-collector:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: components/analytics-collector
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: components/analytics-collector/package-lock.json
-      - run: npm ci
-      - run: npm run check
-      - run: npm test
-      - name: contract copy matches canonical contract
-        run: cmp src/mm-contract.ts ../../contract/mm-contract.ts
+      - run: npx tsx src/cli.ts install
+      - run: npx tsx src/cli.ts doctor
+      - run: npx tsx src/cli.ts once
+        env:
+          MM_STATE_DIR: ${{ runner.temp }}/mm-state
+          ARENA_MARKET: synthetic

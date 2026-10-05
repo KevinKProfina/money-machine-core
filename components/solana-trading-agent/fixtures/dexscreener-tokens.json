@@ -1,0 +1,209 @@
+{
+  "schemaVersion": "1.0.0",
+  "pairs": [
+    {
+      "chainId": "solana",
+      "dexId": "raydium",
+      "url": "https://dexscreener.com/solana/good1pair",
+      "pairAddress": "GOOD1Pair",
+      "baseToken": {
+        "address": "GooD1111111111111111111111111111111111111pump",
+        "name": "GOOD1 Token",
+        "symbol": "GOOD1"
+      },
+      "quoteToken": {
+        "address": "So11111111111111111111111111111111111111112",
+        "symbol": "SOL"
+      },
+      "priceNative": "0.0001",
+      "priceUsd": "0.0125",
+      "txns": {
+        "h24": {
+          "buys": 3000,
+          "sells": 2400
+        }
+      },
+      "volume": {
+        "h24": 1500000
+      },
+      "liquidity": {
+        "usd": 400000,
+        "base": 1,
+        "quote": 1
+      },
+      "fdv": 5500000,
+      "marketCap": 5000000,
+      "pairCreatedAt": 1790092800000
+    },
+    {
+      "chainId": "solana",
+      "dexId": "raydium",
+      "url": "https://dexscreener.com/solana/good1pair",
+      "pairAddress": "GOOD1PairB",
+      "baseToken": {
+        "address": "GooD1111111111111111111111111111111111111pump",
+        "name": "GOOD1 Token",
+        "symbol": "GOOD1"
+      },
+      "quoteToken": {
+        "address": "So11111111111111111111111111111111111111112",
+        "symbol": "SOL"
+      },
+      "priceNative": "0.0001",
+      "priceUsd": "0.0124",
+      "txns": {
+        "h24": {
+          "buys": 50,
+          "sells": 40
+        }
+      },
+      "volume": {
+        "h24": 20000
+      },
+      "liquidity": {
+        "usd": 9000,
+        "base": 1,
+        "quote": 1
+      },
+      "fdv": 5500000,
+      "marketCap": 5000000,
+      "pairCreatedAt": 1790740800000
+    },
+    {
+      "chainId": "solana",
+      "dexId": "raydium",
+      "url": "https://dexscreener.com/solana/good2pair",
+      "pairAddress": "GOOD2Pair",
+      "baseToken": {
+        "address": "GooD2222222222222222222222222222222222222pump",
+        "name": "GOOD2 Token",
+        "symbol": "GOOD2"
+      },
+      "quoteToken": {
+        "address": "So11111111111111111111111111111111111111112",
+        "symbol": "SOL"
+      },
+      "priceNative": "0.0001",
+      "priceUsd": "0.84",
+      "txns": {
+        "h24": {
+          "buys": 1200,
+          "sells": 1000
+        }
+      },
+      "volume": {
+        "h24": 600000
+      },
+      "liquidity": {
+        "usd": 150000,
+        "base": 1,
+        "quote": 1
+      },
+      "fdv": 2200000,
+      "marketCap": 2000000,
+      "pairCreatedAt": 1790553600000
+    },
+    {
+      "chainId": "solana",
+      "dexId": "raydium",
+      "url": "https://dexscreener.com/solana/newbpair",
+      "pairAddress": "NEWBPair",
+      "baseToken": {
+        "address": "NewB3333333333333333333333333333333333333pump",
+        "name": "NEWB Token",
+        "symbol": "NEWB"
+      },
+      "quoteToken": {
+        "address": "So11111111111111111111111111111111111111112",
+        "symbol": "SOL"
+      },
+      "priceNative": "0.0001",
+      "priceUsd": "0.0003",
+      "txns": {
+        "h24": {
+          "buys": 5000,
+          "sells": 2000
+        }
+      },
+      "volume": {
+        "h24": 900000
+      },
+      "liquidity": {
+        "usd": 120000,
+        "base": 1,
+        "quote": 1
+      },
+      "fdv": 1650000.0000000002,
+      "marketCap": 1500000,
+      "pairCreatedAt": 1790805600000
+    },
+    {
+      "chainId": "solana",
+      "dexId": "raydium",
+      "url": "https://dexscreener.com/solana/thinpair",
+      "pairAddress": "THINPair",
+      "baseToken": {
+        "address": "Thin4444444444444444444444444444444444444pump",
+        "name": "THIN Token",
+        "symbol": "THIN"
+      },
+      "quoteToken": {
+        "address": "So11111111111111111111111111111111111111112",
+        "symbol": "SOL"
+      },
+      "priceNative": "0.0001",
+      "priceUsd": "0.00001",
+      "txns": {
+        "h24": {
+          "buys": 400,
+          "sells": 300
+        }
+      },
+      "volume": {
+        "h24": 150000
+      },
+      "liquidity": {
+        "usd": 5000,
+        "base": 1,
+        "quote": 1
+      },
+      "fdv": 330000,
+      "marketCap": 300000,
+      "pairCreatedAt": 1790452800000
+    },
+    {
+      "chainId": "solana",
+      "dexId": "raydium",
+      "url": "https://dexscreener.com/solana/dumppair",
+      "pairAddress": "DUMPPair",
+      "baseToken": {
+        "address": "Dump5555555555555555555555555555555555555pump",
+        "name": "DUMP Token",
+        "symbol": "DUMP"
+      },
+      "quoteToken": {
+        "address": "So11111111111111111111111111111111111111112",
+        "symbol": "SOL"
+      },
+      "priceNative": "0.0001",
+      "priceUsd": "0.02",
+      "txns": {
+        "h24": {
+          "buys": 300,
+          "sells": 900
+        }
+      },
+      "volume": {
+        "h24": 400000
+      },
+      "liquidity": {
+        "usd": 200000,
+        "base": 1,
+        "quote": 1
+      },
+      "fdv": 3300000.0000000005,
+      "marketCap": 3000000,
+      "pairCreatedAt": 1789732800000
+    }
+  ]
+}

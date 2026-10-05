@@ -1,38 +1,40 @@
 # money-machine-core
 
-Integrationsschicht des Money-Machine-Systems: gemeinsamer Datenvertrag, Supervisor, Not-Aus und Status-Dashboard für alle Komponenten-Repos.
+Das komplette Money-Machine-System in einem Repo: gemeinsamer Datenvertrag, Supervisor, Not-Aus, Dashboard und alle Komponenten unter `components/`.
 
 ## Systemüberblick
 
 ```text
-                     ┌──────────────────────────── money-machine-core ───────────────────────────┐
-                     │  Supervisor (Zyklen + Daemons) · Not-Aus (KILL) · Dashboard :8780 · CLI    │
-                     └───────────────┬────────────────────────────────────────────────┬──────────┘
-                                     │  $MM_STATE_DIR (gemeinsame JSON-Dateien)       │
-   Phase 1  solana-trading-agent ──► strategies/solana-trader.json                    │
-            liquidation-hunter   ──► strategies/liquidation-hunter.json               │
-   Phase 2  revenue-engine       ──► revenue.json  ◄── marketplace.json ◄── agent-marketplace (Daemon, HTTP :8790)
-   Phase 3  capital-allocator    ──► allocation-proposal.json
-   Phase 4  orchestrator         ──► allocations.json + portfolio.json
-                                     │
-                                     └──► Strategien lesen ihr Budget aus allocations.json im nächsten Zyklus
+                 ┌────────────────────────────── money-machine-core ──────────────────────────────┐
+                 │  Supervisor (Zyklen + Daemons) · Not-Aus · Dashboard :8780 · Alarme · Backups   │
+                 └──────────────┬──────────────────────────────────────────────────────┬─────────┘
+                                │  $MM_STATE_DIR (gemeinsame JSON-Dateien)              │
+  Phase 1  solana-trading-agent ─► strategies/solana-trader.json   ◄── arena/promotions.json (beförderte Strategie)
+           agent-arena          ─► strategies/agent-arena.json + arena/summary.json
+           venture-studio       ─► studio/summary.json, Website, Stripe-Links (nach Freigabe)
+  Phase 2  revenue-engine       ─► revenue.json  ◄── marketplace.json ◄── agent-marketplace (Daemon :8790)
+  Phase 3  capital-allocator    ─► allocation-proposal.json
+  Phase 4  orchestrator         ─► allocations.json + portfolio.json ──► Budgets für den nächsten Zyklus
+  Daemons  agent-marketplace (:8790), analytics-collector (:8791, cookielose Besucherzählung fürs Studio)
 ```
 
-| Repo | Rolle |
+| Komponente (`components/…`) | Rolle |
 |---|---|
-| `solana-trading-agent` | Strategie: Solana-Token-Trading (Paper-Modus standardmäßig) |
-| `liquidation-hunter` | Strategie: Liquidationen von Lending-Positionen (derzeit simulierte Datenquelle) |
-| `revenue-engine` | Erfasst und aggregiert alle Umsatzströme (Trading, KI-Services, Affiliate, digitale Produkte, SaaS) |
-| `agent-marketplace` | Marktplatz, auf dem Agenten Services anbieten/kaufen (Escrow, Reputation, Revenue-Share) |
-| `components/venture-studio` (in diesem Repo) | Findet selbst Einnahmeideen (bevorzugt solche, die das System komplett allein umsetzen kann), baut digitale Produkte + Verkaufsseiten, verkauft über Stripe, misst und stellt Flops ein. **Live geht nur, was du im Dashboard freigibst.** |
-| `components/agent-arena` (in diesem Repo) | Evolutionäre Agenten-Arena: viele kleine Agenten mit eigenem Budget, Verlierer sterben, Gewinner vermehren sich mit mutierter Strategie (Paper-Modus) |
+| `solana-trading-agent` | Solana-Token-Trading, Paper-Modus standardmäßig; kann die von der Arena beförderte Strategie übernehmen (`STRATEGY_SOURCE=arena`) |
+| `agent-arena` | Evolutionäre Agenten-Arena: viele kleine Agenten mit eigenem Budget, Verlierer sterben, Gewinner vermehren sich mit mutierter Strategie; Backtests auf GeckoTerminal-Historie, Beförderung nur bei positivem Out-of-Sample-Ergebnis |
+| `venture-studio` | Findet selbst Einnahmeideen (bevorzugt komplett selbst umsetzbare), baut digitale Produkte + Verkaufsseiten, verkauft über Stripe, misst den Funnel, stellt Flops ein. **Live geht nur, was du im Dashboard freigibst.** |
+| `analytics-collector` | Cookielose, datensparsame Besucherzählung für die Studio-Website |
+| `revenue-engine` | Erfasst und aggregiert alle Umsatzströme |
+| `agent-marketplace` | Marktplatz, auf dem Agenten Services anbieten/kaufen (Escrow, Reputation, Revenue-Share; interne Guthaben) |
 | `capital-allocator` | Bewertet Strategien und schlägt eine Kapitalverteilung vor |
 | `orchestrator` | Governance: Health-Gates, Reserve, Drawdown-Not-Aus, Reinvestition, verbindliche Allokation |
-| `money-machine-core` | Dieses Repo |
+| `liquidation-hunter` | Liquidationen von Lending-Positionen — **deaktiviert**, bis es eine echte Datenquelle gibt |
+
+Die früheren Einzel-Repos (`solana-trading-agent`, `liquidation-hunter`, `capital-allocator`, `orchestrator`, `revenue-engine`, `agent-marketplace`) sind hier unter `components/` enthalten und werden nicht mehr gebraucht.
 
 ## Datenvertrag
 
-`contract/mm-contract.ts` ist die einzige Quelle für alle gemeinsamen Typen und Helfer (atomare Schreibvorgänge, Not-Aus-Prüfung, Budget-Abfrage, Event-Log). Jedes Komponenten-Repo hält eine **unveränderte Kopie** unter `src/mm-contract.ts`. Änderungen nur hier vornehmen, dann `npm run sync-contract` ausführen; `npm run doctor` meldet Abweichungen.
+`contract/mm-contract.ts` ist die einzige Quelle für alle gemeinsamen Typen und Helfer (atomare Schreibvorgänge, Not-Aus-Prüfung, Budget-Abfrage, Event-Log). Jede Komponente hält eine **unveränderte Kopie** unter `src/mm-contract.ts` (so bleibt jede Komponente einzeln lauffähig; die CI prüft, dass alle Kopien identisch sind). Änderungen nur hier vornehmen, dann `npm run sync-contract` ausführen; `npm run doctor` meldet Abweichungen.
 
 Dateien in `$MM_STATE_DIR`:
 
@@ -51,25 +53,24 @@ Dateien in `$MM_STATE_DIR`:
 ## Schnellstart
 
 ```bash
-# alle Repos nebeneinander klonen, installieren, prüfen
 git clone https://github.com/KevinKProfina/money-machine-core.git
 cd money-machine-core
-scripts/bootstrap.sh            # klont die Geschwister-Repos in das übergeordnete Verzeichnis
+scripts/bootstrap.sh            # installiert alle Komponenten und prüft sie (npm run doctor)
 
 cp .env.example .env
 npm run once                    # ein kompletter Systemzyklus + Statusausgabe
-npm start                       # Dauerbetrieb: Zyklen, Marketplace-Daemon, Dashboard auf http://127.0.0.1:8780
+npm start                       # Dauerbetrieb: Zyklen, Daemons, Dashboard auf http://127.0.0.1:8780
 ```
 
-Jede Komponente hat ihre eigene `.env` (siehe deren `.env.example`). `MM_STATE_DIR` wird vom Supervisor gesetzt und muss dort nicht eingetragen werden.
+Jede Komponente kann zusätzlich ihre eigene `.env` haben (siehe deren `.env.example`). `MM_STATE_DIR` setzt der Supervisor; im Docker-Betrieb steht alles in einer Datei `deploy/mm.env`.
 
 ## Deployment
 
-**Docker (empfohlen):** alle Repos nebeneinander klonen (`scripts/bootstrap.sh`), dann im übergeordneten Verzeichnis:
+**Docker (empfohlen):** im Repo-Verzeichnis:
 
 ```bash
-cp money-machine-core/deploy/mm.env.example money-machine-core/deploy/mm.env   # ausfüllen
-docker compose -f money-machine-core/deploy/docker-compose.yml up -d --build
+cp deploy/mm.env.example deploy/mm.env   # ausfüllen
+docker compose -f deploy/docker-compose.yml up -d --build
 ```
 
 Dashboard und Marketplace-API sind nur auf `127.0.0.1` erreichbar. Der Zustand liegt im Volume `mm-state`.

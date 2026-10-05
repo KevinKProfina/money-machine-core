@@ -1,12 +1,10 @@
-# Builds the whole Money Machine system into one image.
-# Build context must be the PARENT directory that contains all component repos:
-#   docker build -f money-machine-core/deploy/Dockerfile -t money-machine .
+# Builds the whole Money Machine system (this monorepo) into one image:
+#   docker build -f deploy/Dockerfile -t money-machine .
 FROM node:22-bookworm-slim
 
-WORKDIR /opt/mm
+WORKDIR /opt/mm/money-machine-core
 COPY . .
-RUN cd money-machine-core \
- && npm ci --no-audit --no-fund \
+RUN npm ci --no-audit --no-fund \
  && npx tsx src/cli.ts install \
  && mkdir -p /data /backups logs \
  && chown -R node:node /data /backups /opt/mm/money-machine-core/logs

@@ -1,0 +1,10 @@
+{
+  "object": "list",
+  "url": "/v1/balance_transactions",
+  "has_more": false,
+  "data": [
+    { "id": "txn_4", "object": "balance_transaction", "amount": -150, "fee": 0, "net": -150, "currency": "usd", "type": "stripe_fee", "created": 1790001800, "description": "Radar fee" },
+    { "id": "txn_5", "object": "balance_transaction", "amount": -4000, "fee": 0, "net": -4000, "currency": "usd", "type": "payout", "created": 1790002400, "description": "Payout to bank" },
+    { "id": "txn_6", "object": "balance_transaction", "amount": 1000, "fee": 59, "net": 941, "currency": "usd", "type": "payment", "created": 1790003000, "description": null }
+  ]
+}

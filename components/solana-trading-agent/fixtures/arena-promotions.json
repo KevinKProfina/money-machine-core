@@ -1,0 +1,107 @@
+{
+  "schema": "mm.arena-promotions/v1",
+  "timestamp": "2026-10-01T00:00:00.000Z",
+  "arenaCycle": 600,
+  "arenaMarket": "dexscreener",
+  "cycleMinutes": 5,
+  "criteria": {
+    "minCycles": 288,
+    "minTrades": 10,
+    "maxDrawdown": 0.3,
+    "minOosTrades": 5,
+    "minOosReturn": 0,
+    "maxOosDrawdown": 0.3,
+    "margin": 0.02,
+    "maxBacktestAgeHours": 168
+  },
+  "notes": [
+    "promotion selects strategy parameters only; it never enables live trading (the trader keeps MODE + LIVE_TRADING_CONFIRM)",
+    "evidence is paper/backtest only; out-of-sample gains are not a guarantee of future results"
+  ],
+  "candidates": [
+    {
+      "genomeId": "g-3b155533883d",
+      "agentId": "a1",
+      "genome": {
+        "minLiquidityUsd": 72282.63594665423,
+        "minVolume24hUsd": 92204.2726310436,
+        "minAgeHours": 15.920126197859645,
+        "maxAgeHours": 385.2513043100525,
+        "minBuySellRatio": 1.5666301056277008,
+        "minChangeM5": -2.4919513408094645,
+        "minChangeH1": 6.62896188441664,
+        "maxChangeH1": 27.11098977830261,
+        "minChangeH24": -40.814942612778395,
+        "positionPct": 0.204412230476737,
+        "takeProfitPct": 8.450234961606087,
+        "stopLossPct": 9.456109398044646,
+        "trailingStopPct": 21.008624497335404,
+        "maxHoldCycles": 39,
+        "maxOpenPositions": 1,
+        "cooldownCycles": 3,
+        "rankBy": 2
+      },
+      "evidence": {
+        "liveArenaCycles": 600,
+        "arenaTrades": 25,
+        "arenaReturn": 0.3,
+        "arenaMaxDrawdown": 0.12,
+        "backtestOos": {
+          "return": 0.07,
+          "trades": 15,
+          "maxDrawdown": 0.11,
+          "sharpe": 0.21
+        }
+      },
+      "score": 0.06,
+      "eligible": true,
+      "reasons": []
+    }
+  ],
+  "promoted": {
+    "genomeId": "g-3b155533883d",
+    "genome": {
+      "minLiquidityUsd": 72282.63594665423,
+      "minVolume24hUsd": 92204.2726310436,
+      "minAgeHours": 15.920126197859645,
+      "maxAgeHours": 385.2513043100525,
+      "minBuySellRatio": 1.5666301056277008,
+      "minChangeM5": -2.4919513408094645,
+      "minChangeH1": 6.62896188441664,
+      "maxChangeH1": 27.11098977830261,
+      "minChangeH24": -40.814942612778395,
+      "positionPct": 0.204412230476737,
+      "takeProfitPct": 8.450234961606087,
+      "stopLossPct": 9.456109398044646,
+      "trailingStopPct": 21.008624497335404,
+      "maxHoldCycles": 39,
+      "maxOpenPositions": 1,
+      "cooldownCycles": 3,
+      "rankBy": 2
+    },
+    "promotedAt": "2026-10-01T00:00:00.000Z",
+    "reason": "first eligible candidate (score 0.0600)",
+    "score": 0.06,
+    "evidence": {
+      "liveArenaCycles": 600,
+      "arenaTrades": 25,
+      "arenaReturn": 0.3,
+      "arenaMaxDrawdown": 0.12,
+      "backtestOos": {
+        "return": 0.07,
+        "trades": 15,
+        "maxDrawdown": 0.11,
+        "sharpe": 0.21
+      }
+    },
+    "cycleMinutes": 5
+  },
+  "history": [
+    {
+      "genomeId": "g-3b155533883d",
+      "promotedAt": "2026-10-01T00:00:00.000Z",
+      "reason": "first eligible candidate (score 0.0600)",
+      "score": 0.06
+    }
+  ]
+}
