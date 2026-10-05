@@ -1,0 +1,8 @@
+{
+  "success": true,
+  "next_page_key": "page-2",
+  "sales": [
+    { "id": "sale_a", "created_at": "2026-09-28T10:00:00Z", "price": 1500, "gumroad_fee": 165, "currency": "usd", "product_name": "Trading Journal Template", "product_id": "p1" },
+    { "id": "sale_b", "created_at": "2026-09-29T10:00:00Z", "price": 900, "currency": "usd", "product_name": "Prompt Pack", "product_id": "p2", "refunded": true }
+  ]
+}

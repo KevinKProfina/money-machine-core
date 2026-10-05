@@ -1,0 +1,10 @@
+{
+  "object": "list",
+  "url": "/v1/balance_transactions",
+  "has_more": true,
+  "data": [
+    { "id": "txn_1", "object": "balance_transaction", "amount": 4900, "fee": 172, "net": 4728, "currency": "usd", "type": "charge", "created": 1790000000, "description": "Pro plan" },
+    { "id": "txn_2", "object": "balance_transaction", "amount": -4900, "fee": 0, "net": -4900, "currency": "usd", "type": "refund", "created": 1790000600, "description": "Refund Pro plan" },
+    { "id": "txn_3", "object": "balance_transaction", "amount": 2500, "fee": 100, "net": 2400, "currency": "eur", "type": "charge", "created": 1790001200, "description": "EU customer" }
+  ]
+}

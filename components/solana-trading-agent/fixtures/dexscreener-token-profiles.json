@@ -1,0 +1,32 @@
+[
+  {
+    "url": "https://dexscreener.com/solana/x",
+    "chainId": "solana",
+    "tokenAddress": "GooD1111111111111111111111111111111111111pump"
+  },
+  {
+    "url": "https://dexscreener.com/ethereum/y",
+    "chainId": "ethereum",
+    "tokenAddress": "0xabc0000000000000000000000000000000000000"
+  },
+  {
+    "chainId": "solana",
+    "tokenAddress": "GooD2222222222222222222222222222222222222pump"
+  },
+  {
+    "chainId": "solana",
+    "tokenAddress": "NewB3333333333333333333333333333333333333pump"
+  },
+  {
+    "chainId": "solana",
+    "tokenAddress": "Thin4444444444444444444444444444444444444pump"
+  },
+  {
+    "chainId": "solana",
+    "tokenAddress": "Dump5555555555555555555555555555555555555pump"
+  },
+  {
+    "chainId": "solana",
+    "tokenAddress": "GooD1111111111111111111111111111111111111pump"
+  }
+]

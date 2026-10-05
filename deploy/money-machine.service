@@ -1,0 +1,26 @@
+# systemd unit for running without Docker. Assumes the repo is cloned to
+# /opt/mm/money-machine-core (then scripts/bootstrap.sh) and owned by the "mm" user.
+#   sudo cp deploy/money-machine.service /etc/systemd/system/
+#   sudo systemctl enable --now money-machine
+[Unit]
+Description=Money Machine supervisor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=mm
+WorkingDirectory=/opt/mm/money-machine-core
+EnvironmentFile=/opt/mm/money-machine-core/deploy/mm.env
+Environment=MM_STATE_DIR=/var/lib/money-machine/state
+Environment=MM_BACKUP_DIR=/var/lib/money-machine/backups
+ExecStart=/usr/bin/node --import tsx src/cli.ts start
+Restart=always
+RestartSec=10
+StateDirectory=money-machine
+NoNewPrivileges=true
+ProtectSystem=full
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

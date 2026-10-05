@@ -1,0 +1,63 @@
+name: CI
+on:
+  push:
+  pull_request:
+jobs:
+  core:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: npm test
+  component:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        component:
+          - agent-arena
+          - agent-marketplace
+          - analytics-collector
+          - capital-allocator
+          - liquidation-hunter
+          - orchestrator
+          - revenue-engine
+          - solana-trading-agent
+          - venture-studio
+    defaults:
+      run:
+        working-directory: components/${{ matrix.component }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: components/${{ matrix.component }}/package-lock.json
+      - run: npm ci
+      - run: npm run check
+      - run: npm test
+      - name: contract copy matches canonical contract
+        run: cmp src/mm-contract.ts ../../contract/mm-contract.ts
+  system:
+    # one full system cycle with all components (no secrets, synthetic arena market)
+    runs-on: ubuntu-latest
+    needs: [core, component]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx tsx src/cli.ts install
+      - run: npx tsx src/cli.ts doctor
+      - run: npx tsx src/cli.ts once
+        env:
+          MM_STATE_DIR: ${{ runner.temp }}/mm-state
+          ARENA_MARKET: synthetic

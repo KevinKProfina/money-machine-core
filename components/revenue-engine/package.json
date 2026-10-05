@@ -1,0 +1,24 @@
+{
+  "name": "revenue-engine",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Tracks and aggregates revenue streams (trading, AI services, affiliate, digital products, SaaS) for the Money Machine system",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "once": "tsx src/index.ts --once",
+    "report": "tsx src/report.ts",
+    "add": "tsx src/add.ts",
+    "check": "tsc --noEmit",
+    "test": "node --import tsx --test \"src/**/*.test.ts\""
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3"
+  }
+}

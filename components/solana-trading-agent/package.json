@@ -1,0 +1,31 @@
+{
+  "name": "solana-trading-agent",
+  "version": "0.3.0",
+  "description": "solana-trader strategy for the Money Machine system (paper trading by default)",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "once": "tsx src/index.ts --once",
+    "dry-run": "tsx src/index.ts --once --mode dry-run",
+    "replay": "tsx src/replay.ts",
+    "wallet-check": "tsx src/wallet-check.ts",
+    "check": "tsc --noEmit",
+    "test": "node --import tsx --test \"src/**/*.test.ts\""
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.131.0",
+    "@solana/web3.js": "^1.99.0",
+    "bs58": "^6.0.0",
+    "dotenv": "^16.6.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3"
+  }
+}

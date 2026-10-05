@@ -1,0 +1,59 @@
+{
+  "components": [
+    {
+      "name": "solana-trading-agent",
+      "dir": "./components/solana-trading-agent",
+      "type": "cycle",
+      "phase": 1
+    },
+    {
+      "name": "liquidation-hunter",
+      "dir": "./components/liquidation-hunter",
+      "type": "cycle",
+      "phase": 1,
+      "enabled": false
+    },
+    {
+      "name": "agent-arena",
+      "dir": "./components/agent-arena",
+      "type": "cycle",
+      "phase": 1
+    },
+    {
+      "name": "venture-studio",
+      "dir": "./components/venture-studio",
+      "type": "cycle",
+      "phase": 1
+    },
+    {
+      "name": "revenue-engine",
+      "dir": "./components/revenue-engine",
+      "type": "cycle",
+      "phase": 2
+    },
+    {
+      "name": "capital-allocator",
+      "dir": "./components/capital-allocator",
+      "type": "cycle",
+      "phase": 3
+    },
+    {
+      "name": "orchestrator",
+      "dir": "./components/orchestrator",
+      "type": "cycle",
+      "phase": 4
+    },
+    {
+      "name": "agent-marketplace",
+      "dir": "./components/agent-marketplace",
+      "type": "daemon",
+      "script": "start"
+    },
+    {
+      "name": "analytics-collector",
+      "dir": "./components/analytics-collector",
+      "type": "daemon",
+      "script": "start"
+    }
+  ]
+}
